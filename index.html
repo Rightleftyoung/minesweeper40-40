@@ -153,6 +153,12 @@
         .lose { color: #ff0000; }
         
         /* Simple modal for minigame */
+        /* Disable selection on mobile */
+        html, body, .game-container, .btn, .cell {
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -310,6 +316,14 @@
                 this.initializeBoard();
                 this.setupEventListeners();
                 this.render();
+
+                // Mobile copy/select/callout prevention
+                if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+                    const block = (e) => e.preventDefault();
+                    ['copy','cut','paste','selectstart','contextmenu','dragstart'].forEach(ev => {
+                        document.addEventListener(ev, block, { passive: false });
+                    });
+                }
             }
 
             initializeBoard() {
@@ -1156,29 +1170,33 @@
                     this.miniGameRunning = true;
                     await playSequence(this._simonSeq);
                 };
-                simonTiles.forEach(tile => {
-                    const onTap = async () => {
-                        if (!this.miniGameRunning || select.value !== 'simon') return;
-                        const idx = Number(tile.dataset.idx);
-                        if (idx === this._simonSeq[this._simonPos]) {
-                            this._simonPos++;
-                            if (this._simonPos >= this._simonSeq.length) {
-                                // next round
-                                this._simonRound++;
-                                info.textContent = `Round: ${this._simonRound} / 6`;
-                                if (this._simonRound > 6) { this.finishMiniGame(true); return; }
-                                this._simonSeq.push(Math.floor(Math.random()*4));
-                                this._simonPos = 0;
-                                await new Promise(r=>setTimeout(r, 400));
-                                await playSequence(this._simonSeq);
+                const bindSimonHandlers = () => {
+                    simonTiles.forEach(tile => {
+                        const onTap = async () => {
+                            if (!this.miniGameRunning || select.value !== 'simon') return;
+                            const idx = Number(tile.dataset.idx);
+                            if (idx === this._simonSeq[this._simonPos]) {
+                                this._simonPos++;
+                                if (this._simonPos >= this._simonSeq.length) {
+                                    // next round
+                                    this._simonRound++;
+                                    info.textContent = `Round: ${this._simonRound} / 6`;
+                                    if (this._simonRound > 6) { this.finishMiniGame(true); return; }
+                                    this._simonSeq.push(Math.floor(Math.random()*4));
+                                    this._simonPos = 0;
+                                    await new Promise(r=>setTimeout(r, 400));
+                                    await playSequence(this._simonSeq);
+                                }
+                            } else {
+                                this.finishMiniGame(false);
                             }
-                        } else {
-                            this.finishMiniGame(false);
-                        }
-                    };
-                    tile.onclick = onTap;
-                    tile.ontouchstart = (e)=>{ e.preventDefault(); onTap(); };
-                });
+                        };
+                        tile.onclick = onTap;
+                        tile.ontouchstart = (e)=>{ e.preventDefault(); onTap(); };
+                    });
+                };
+                // initial bind
+                bindSimonHandlers();
 
                 startBtn.onclick = async () => {
                     const mode = select.value;
@@ -1204,6 +1222,7 @@
                         this._nextReactionRound();
                     } else if (mode === 'simon') {
                         resetSimon();
+                        bindSimonHandlers();
                         await startSimon();
                     } else if (mode === 'frenzy') {
                         // 20s timed, each hit worth 500
