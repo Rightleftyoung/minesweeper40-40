@@ -227,6 +227,13 @@
                 <button class="btn" id="buyFlagBtn">Buy Flag (100)</button>
                 <button class="btn" id="miniGameBtn">Mini Game</button>
                 <button class="btn" id="powersToggleBtn">Powers: On</button>
+                <span style="display:inline-flex;gap:6px;align-items:center;">
+                    <label for="rowsInput">Rows:</label>
+                    <input id="rowsInput" type="number" min="5" max="80" value="40" style="width:64px;padding:6px;">
+                    <label for="colsInput">Cols:</label>
+                    <input id="colsInput" type="number" min="5" max="80" value="40" style="width:64px;padding:6px;">
+                    <button class="btn" id="applySizeBtn">Apply Size</button>
+                </span>
             </div>
             <div class="timer" id="timer">000</div>
         </div>
@@ -250,6 +257,7 @@
                     <option value="moles">Whack-a-Mine</option>
                     <option value="math">Math Sprint</option>
                     <option value="hold">Hold Challenge</option>
+                    <option value="coin">Coin Flip</option>
                 </select>
             </p>
             <div id="miniGameDesc">Tap the moving target 10 times in 15 seconds to win 5,000 points.</div>
@@ -278,6 +286,14 @@
                 <!-- Hold bar -->
                 <div id="holdBarWrap" style="display:none;position:absolute;left:12px;right:12px;bottom:12px;height:16px;background:#444;border-radius:8px;overflow:hidden;">
                     <div id="holdBar" style="height:100%;width:0%;background:#2ecc71;"></div>
+                </div>
+                <!-- Coin flip UI -->
+                <div id="coinWrap" style="display:none;position:absolute;inset:8px;display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;">
+                    <div id="coinStatus" style="color:#fff;font-size:18px;">Pick Heads or Tails</div>
+                    <div>
+                        <button class="btn" id="headsBtn">Heads</button>
+                        <button class="btn" id="tailsBtn">Tails</button>
+                    </div>
                 </div>
             </div>
             <p id="miniGameInfo" style="margin-top:8px;">Hits: 0/10 • Time: 15s</p>
@@ -379,6 +395,7 @@
                 document.getElementById('buyFlagBtn').addEventListener('click', () => this.buyFlagFunction());
                 document.getElementById('miniGameBtn').addEventListener('click', () => this.openMiniGame());
                 document.getElementById('powersToggleBtn').addEventListener('click', () => this.togglePowers());
+                document.getElementById('applySizeBtn').addEventListener('click', () => this.applyNewSize());
             }
 
             render() {
@@ -965,6 +982,20 @@
                 this.render();
             }
 
+            // ===== Board size controls =====
+            applyNewSize() {
+                const rowsInput = document.getElementById('rowsInput');
+                const colsInput = document.getElementById('colsInput');
+                const newRows = Math.max(5, Math.min(80, parseInt(rowsInput.value)));
+                const newCols = Math.max(5, Math.min(80, parseInt(colsInput.value)));
+                const currentDensity = this.mines / (this.rows * this.cols); // mines per tile
+                this.rows = newRows;
+                this.cols = newCols;
+                this.mines = Math.max(1, Math.round(currentDensity * newRows * newCols));
+                this.availableFlags = this.mines;
+                this.newGame();
+            }
+
             // ===== Powers Disabled Mode =====
             togglePowers() {
                 this.powersDisabledMode = !this.powersDisabledMode;
@@ -1088,6 +1119,14 @@
                         reaction.style.display = 'none';
                         simonGrid.style.display = 'none';
                         mathWrap.style.display = 'none';
+                    } else if (v === 'coin') {
+                        desc.textContent = 'Coin Flip: 10 rounds. +150 for correct guess.';
+                        info.textContent = 'Ready';
+                        target.style.display = 'none';
+                        reaction.style.display = 'none';
+                        simonGrid.style.display = 'none';
+                        mathWrap.style.display = 'none';
+                        document.getElementById('coinWrap').style.display = 'none';
                     }
                 };
                 select.onchange = syncUIForSelection;
@@ -1397,6 +1436,28 @@
                                 this.finishMiniGame(true, { winPoints: pts });
                             }
                         }, 1000);
+                    } else if (mode === 'coin') {
+                        const coinWrap = document.getElementById('coinWrap');
+                        const coinStatus = document.getElementById('coinStatus');
+                        const headsBtn = document.getElementById('headsBtn');
+                        const tailsBtn = document.getElementById('tailsBtn');
+                        coinWrap.style.display = 'flex';
+                        let round = 0;
+                        let correct = 0;
+                        const play = (guess) => {
+                            if (!this.miniGameRunning) return;
+                            const flip = Math.random() < 0.5 ? 'Heads' : 'Tails';
+                            const win = (guess === flip);
+                            if (win) { correct++; this.addScore(150); }
+                            round++;
+                            coinStatus.textContent = `Flip: ${flip} • Correct: ${correct} / ${round}`;
+                            if (round >= 10) {
+                                const bonus = correct * 50;
+                                this.finishMiniGame(true, { winPoints: bonus });
+                            }
+                        };
+                        headsBtn.onclick = () => play('Heads');
+                        tailsBtn.onclick = () => play('Tails');
                     }
                 };
                 closeBtn.onclick = () => this.closeMiniGame();
