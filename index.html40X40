@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minesweeper</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .game-container {
+            background-color: #c0c0c0;
+            padding: 20px;
+            border: 3px outset #c0c0c0;
+            border-radius: 5px;
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow: auto;
+        }
+
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #c0c0c0;
+            border: 2px inset #c0c0c0;
+        }
+
+        .mine-counter, .timer, .score {
+            background-color: #000;
+            color: #f00;
+            font-family: 'Courier New', monospace;
+            font-size: 24px;
+            font-weight: bold;
+            padding: 5px 10px;
+            border: 2px inset #c0c0c0;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .btn {
+            background-color: #c0c0c0;
+            border: 2px outset #c0c0c0;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .btn:hover {
+            background-color: #d0d0d0;
+        }
+
+        .btn:active {
+            border: 2px inset #c0c0c0;
+        }
+
+        .btn:disabled {
+            background-color: #a0a0a0;
+            cursor: not-allowed;
+        }
+
+        .game-board {
+            display: grid;
+            gap: 1px;
+            background-color: #c0c0c0;
+            border: none;
+            padding: 0;
+            overflow: auto;
+            max-height: 70vh;
+        }
+
+        .cell {
+            width: 30px;
+            height: 30px;
+            background-color: #c0c0c0;
+            border: 1px solid #808080;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .cell:hover {
+            background-color: #d0d0d0;
+        }
+
+        .cell.revealed {
+            background-color: #87CEEB;
+            border: 1px solid #808080;
+            cursor: default;
+        }
+
+        .cell.revealed:hover {
+            background-color: #87CEEB;
+        }
+
+        .cell.flagged {
+            background-color: #87CEEB;
+            color: #f00;
+        }
+
+        .cell.mine {
+            background-color: #f00;
+            color: #fff;
+        }
+
+        .cell.mine-lost {
+            background-color: #0066ff;
+            color: #fff;
+        }
+
+        .cell.mine-flagged {
+            background-color: #0f0;
+            color: #000;
+        }
+
+        .cell.number-0 { color: #808080; }
+        .cell.number-1 { color: #0000ff; }
+        .cell.number-2 { color: #008000; }
+        .cell.number-3 { color: #ff0000; }
+        .cell.number-4 { color: #000080; }
+        .cell.number-5 { color: #800000; }
+        .cell.number-6 { color: #008080; }
+        .cell.number-7 { color: #000000; }
+        .cell.number-8 { color: #808080; }
+
+        .game-status {
+            margin-top: 15px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .win { color: #008000; }
+        .lose { color: #ff0000; }
+        
+        /* Simple modal for minigame */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 420px;
+            text-align: center;
+        }
+        .target-area {
+            position: relative;
+            margin: 12px auto 0;
+            width: 280px;
+            height: 180px;
+            background: #222;
+            border-radius: 6px;
+            overflow: hidden;
+            touch-action: none;
+        }
+        .target {
+            position: absolute;
+            width: 36px;
+            height: 36px;
+            line-height: 36px;
+            text-align: center;
+            border-radius: 50%;
+            background: #ff4757;
+            color: #fff;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Minesweeper</h1>
+    
+    <div class="game-container">
+        <div class="game-header">
+            <div class="mine-counter" id="mineCounter">325</div>
+            <div class="score" id="score">00000</div>
+            <div class="score" id="totalScore">00000</div>
+            <div class="controls">
+                <button class="btn" id="newGameBtn">New Game</button>
+                <select class="btn" id="difficultySelect" style="padding: 8px 12px;">
+                    <option value="200">Easy (200 mines)</option>
+                    <option value="325" selected>Medium (325 mines)</option>
+                    <option value="450">Hard (450 mines)</option>
+                    <option value="500">Expert (500 mines)</option>
+                    <option value="random">Revengeance (650-800 mines)</option>
+                </select>
+                <button class="btn" id="bombBtn">Bomb (5x5)</button>
+                <button class="btn" id="hintBtn">Hint</button>
+                <button class="btn" id="revealMineBtn">Reveal Mine</button>
+                <button class="btn" id="mineDetectorBtn">Mine Detector (300)</button>
+                <button class="btn" id="buyFlagBtn">Buy Flag (100)</button>
+                <button class="btn" id="miniGameBtn">Mini Game</button>
+                <button class="btn" id="powersToggleBtn">Powers: On</button>
+            </div>
+            <div class="timer" id="timer">000</div>
+        </div>
+        
+        <div class="game-board" id="gameBoard"></div>
+        
+        <div class="game-status" id="gameStatus"></div>
+    </div>
+
+    <!-- Minigame Modal -->
+    <div class="modal-overlay" id="miniGameModal">
+        <div class="modal">
+            <h3>Mini Games</h3>
+            <p>
+                <select class="btn" id="miniGameSelect" style="padding:8px 12px;">
+                    <option value="tap">Tap The Mine</option>
+                    <option value="react">Reaction Timer</option>
+                    <option value="simon">Simon Sequence</option>
+                    <option value="frenzy">Target Frenzy</option>
+                    <option value="numbers">Number Tap</option>
+                    <option value="moles">Whack-a-Mine</option>
+                    <option value="math">Math Sprint</option>
+                    <option value="hold">Hold Challenge</option>
+                </select>
+            </p>
+            <div id="miniGameDesc">Tap the moving target 10 times in 15 seconds to win 5,000 points.</div>
+            <div class="target-area" id="targetArea" style="margin-top:10px;">
+                <div class="target" id="target">💣</div>
+                <!-- Reaction UI -->
+                <div id="reactionLight" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;color:#fff;font-size:22px;">
+                    <div id="reactionText">Wait for green...</div>
+                </div>
+                <!-- Simon UI -->
+                <div id="simonGrid" style="display:none;position:absolute;inset:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                    <div class="simon" data-idx="0" style="background:#e74c3c;border-radius:6px;"></div>
+                    <div class="simon" data-idx="1" style="background:#27ae60;border-radius:6px;"></div>
+                    <div class="simon" data-idx="2" style="background:#2980b9;border-radius:6px;"></div>
+                    <div class="simon" data-idx="3" style="background:#f1c40f;border-radius:6px;"></div>
+                </div>
+                <!-- Math choices -->
+                <div id="mathWrap" style="display:none;position:absolute;inset:8px;display:flex;flex-direction:column;gap:8px;color:#fff;">
+                    <div id="mathQuestion" style="text-align:center;font-size:18px;"></div>
+                    <div style="display:flex;gap:8px;justify-content:center;">
+                        <button class="btn" id="mathA"></button>
+                        <button class="btn" id="mathB"></button>
+                        <button class="btn" id="mathC"></button>
+                    </div>
+                </div>
+                <!-- Hold bar -->
+                <div id="holdBarWrap" style="display:none;position:absolute;left:12px;right:12px;bottom:12px;height:16px;background:#444;border-radius:8px;overflow:hidden;">
+                    <div id="holdBar" style="height:100%;width:0%;background:#2ecc71;"></div>
+                </div>
+            </div>
+            <p id="miniGameInfo" style="margin-top:8px;">Hits: 0/10 • Time: 15s</p>
+            <button class="btn" id="startMiniGameBtn">Start</button>
+            <button class="btn" id="closeMiniGameBtn">Close</button>
+        </div>
+    </div>
+
+    <script>
+        class Minesweeper {
+            constructor(rows = 16, cols = 16, mines = 40) {
+                this.rows = rows;
+                this.cols = cols;
+                this.mines = mines;
+                this.board = [];
+                this.revealed = [];
+                this.flagged = [];
+                this.gameOver = false;
+                this.gameWon = false;
+                this.startTime = null;
+                this.timerInterval = null;
+                this.holdTimer = null;
+                this.holdThreshold = 500; // milliseconds to hold for flag
+                this.bombsUsed = 0; // Track number of bombs used (max 5)
+                this.mineRevealed = false; // Track if mine has been revealed
+                this.bombTargeting = false; // Track if bomb targeting mode is active
+                this.mineDetectorActive = false; // Track if mine detector is active
+                this.hintsUsed = 0; // Track number of hints used (max 5)
+                this.score = 0; // Track score (5 points per revealed safe tile)
+                this.totalScore = Number(localStorage.getItem('ms_totalScore') || '0');
+                this.lostMineRow = null; // Track which mine caused the loss
+                this.lostMineCol = null;
+                this.availableFlags = this.mines; // Start with flags equal to mine count
+                this.powersDisabledMode = false; // Powers disabled => double points
+                
+                this.initializeBoard();
+                this.setupEventListeners();
+                this.render();
+            }
+
+            initializeBoard() {
+                // Initialize empty board
+                this.board = Array(this.rows).fill().map(() => Array(this.cols).fill(0));
+                this.revealed = Array(this.rows).fill().map(() => Array(this.cols).fill(false));
+                this.flagged = Array(this.rows).fill().map(() => Array(this.cols).fill(false));
+                
+                // Place mines randomly
+                let minesPlaced = 0;
+                while (minesPlaced < this.mines) {
+                    const row = Math.floor(Math.random() * this.rows);
+                    const col = Math.floor(Math.random() * this.cols);
+                    if (this.board[row][col] !== -1) {
+                        this.board[row][col] = -1; // -1 represents a mine
+                        minesPlaced++;
+                    }
+                }
+                
+                // Calculate numbers for each cell
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        if (this.board[row][col] !== -1) {
+                            this.board[row][col] = this.countAdjacentMines(row, col);
+                        }
+                    }
+                }
+            }
+
+            countAdjacentMines(row, col) {
+                let count = 0;
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        const newRow = row + i;
+                        const newCol = col + j;
+                        if (newRow >= 0 && newRow < this.rows && 
+                            newCol >= 0 && newCol < this.cols && 
+                            this.board[newRow][newCol] === -1) {
+                            count++;
+                        }
+                    }
+                }
+                return count;
+            }
+
+            setupEventListeners() {
+                document.getElementById('newGameBtn').addEventListener('click', () => this.newGame());
+                document.getElementById('difficultySelect').addEventListener('change', () => this.changeDifficulty());
+                document.getElementById('bombBtn').addEventListener('click', () => this.bombFunction());
+                document.getElementById('hintBtn').addEventListener('click', () => this.hintFunction());
+                document.getElementById('revealMineBtn').addEventListener('click', () => this.revealMineFunction());
+                document.getElementById('mineDetectorBtn').addEventListener('click', () => this.mineDetectorFunction());
+                document.getElementById('buyFlagBtn').addEventListener('click', () => this.buyFlagFunction());
+                document.getElementById('miniGameBtn').addEventListener('click', () => this.openMiniGame());
+                document.getElementById('powersToggleBtn').addEventListener('click', () => this.togglePowers());
+            }
+
+            render() {
+                const gameBoard = document.getElementById('gameBoard');
+                gameBoard.innerHTML = '';
+                gameBoard.style.gridTemplateColumns = `repeat(${this.cols}, 30px)`;
+                
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell';
+                        cell.dataset.row = row;
+                        cell.dataset.col = col;
+                        
+                        if (this.revealed[row][col]) {
+                            cell.classList.add('revealed');
+                            if (this.board[row][col] === -1) {
+                                if (row === this.lostMineRow && col === this.lostMineCol) {
+                                    cell.classList.add('mine-lost');
+                                } else {
+                                    cell.classList.add('mine');
+                                }
+                                cell.textContent = '💣';
+                            } else {
+                                cell.classList.add(`number-${this.board[row][col]}`);
+                                cell.textContent = this.board[row][col];
+                            }
+                        } else if (this.flagged[row][col]) {
+                            cell.classList.add('flagged');
+                            cell.textContent = '🚩';
+                        }
+                        
+                        // Mouse events
+                        cell.addEventListener('mousedown', (e) => this.handleMouseDown(e, row, col));
+                        cell.addEventListener('mouseup', (e) => this.handleMouseUp(e, row, col));
+                        cell.addEventListener('mouseleave', () => this.handleMouseLeave(row, col));
+                        cell.addEventListener('contextmenu', (e) => e.preventDefault());
+                        
+                        // Touch events (mobile): tap to reveal, long-press to flag
+                        let touchStartTime = 0;
+                        let touchMoved = false;
+                        cell.addEventListener('touchstart', (e) => {
+                            if (this.gameOver || this.gameWon) return;
+                            touchMoved = false;
+                            touchStartTime = performance.now();
+                            this.holdTimer = setTimeout(() => {
+                                this.flagCell(row, col);
+                            }, this.holdThreshold);
+                        }, { passive: true });
+                        cell.addEventListener('touchmove', () => {
+                            touchMoved = true;
+                            if (this.holdTimer) { clearTimeout(this.holdTimer); this.holdTimer = null; }
+                        }, { passive: true });
+                        cell.addEventListener('touchend', (e) => {
+                            if (this.holdTimer) { clearTimeout(this.holdTimer); this.holdTimer = null; }
+                            const duration = performance.now() - touchStartTime;
+                            if (touchMoved) return;
+                            // If short tap, act like left-click
+                            if (duration < this.holdThreshold) {
+                                if (this.bombTargeting) {
+                                    this.dropBomb(row, col);
+                                } else if (this.mineDetectorActive) {
+                                    this.useMineDetector(row, col);
+                                } else if (this.flagged[row][col]) {
+                                    return;
+                                } else if (this.revealed[row][col]) {
+                                    this.revealAdjacentCells(row, col);
+                                } else {
+                                    this.revealCell(row, col);
+                                }
+                            }
+                        });
+                        
+                        gameBoard.appendChild(cell);
+                    }
+                }
+                
+                this.updateMineCounter();
+                this.updateScore();
+                this.updateTotalScore();
+                this.updateGameStatus();
+            }
+
+            handleMouseDown(e, row, col) {
+                if (this.gameOver || this.gameWon) return;
+                
+                if (e.button === 0) { // Left click
+                    this.holdTimer = setTimeout(() => {
+                        this.flagCell(row, col);
+                    }, this.holdThreshold);
+                }
+            }
+
+            handleMouseUp(e, row, col) {
+                if (this.gameOver || this.gameWon) return;
+                
+                if (this.holdTimer) {
+                    clearTimeout(this.holdTimer);
+                    this.holdTimer = null;
+                }
+                
+                if (e.button === 0) { // Left click
+                    if (this.bombTargeting) {
+                        this.dropBomb(row, col);
+                    } else if (this.mineDetectorActive) {
+                        this.useMineDetector(row, col);
+                    } else if (this.flagged[row][col]) {
+                        // Don't do anything if clicking on a flagged tile
+                        return;
+                    } else if (this.revealed[row][col]) {
+                        this.revealAdjacentCells(row, col);
+                    } else {
+                        this.revealCell(row, col);
+                    }
+                }
+            }
+
+            handleMouseLeave(row, col) {
+                if (this.holdTimer) {
+                    clearTimeout(this.holdTimer);
+                    this.holdTimer = null;
+                }
+            }
+
+            revealCell(row, col) {
+                if (this.revealed[row][col] || this.flagged[row][col] || this.gameOver || this.gameWon) {
+                    return;
+                }
+                
+                if (!this.startTime) {
+                    this.startTime = Date.now();
+                    this.startTimer();
+                }
+                
+                this.revealed[row][col] = true;
+                if (this.board[row][col] !== -1) {
+                    this.addScore(5);
+                }
+                
+                if (this.board[row][col] === -1) {
+                    this.gameOver = true;
+                    this.lostMineRow = row;
+                    this.lostMineCol = col;
+                    this.revealAllMines();
+                    this.stopTimer();
+                } else if (this.board[row][col] === 0) {
+                    // Auto-reveal adjacent cells for empty cells
+                    this.revealAdjacentCells(row, col);
+                }
+                
+                this.checkWinCondition();
+                this.render();
+            }
+
+            revealAdjacentCells(row, col) {
+                if (!this.revealed[row][col]) return;
+                
+                const adjacentFlags = this.countAdjacentFlags(row, col);
+                const adjacentMines = this.board[row][col];
+                
+                // Only reveal if flag count matches the number on the tile
+                if (adjacentFlags === adjacentMines) {
+                    for (let i = -1; i <= 1; i++) {
+                        for (let j = -1; j <= 1; j++) {
+                            const newRow = row + i;
+                            const newCol = col + j;
+                            if (newRow >= 0 && newRow < this.rows && 
+                                newCol >= 0 && newCol < this.cols && 
+                                !this.revealed[newRow][newCol] && 
+                                !this.flagged[newRow][newCol]) {
+                                this.revealCell(newRow, newCol);
+                            }
+                        }
+                    }
+                }
+            }
+
+            countAdjacentFlags(row, col) {
+                let count = 0;
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        const newRow = row + i;
+                        const newCol = col + j;
+                        if (newRow >= 0 && newRow < this.rows && 
+                            newCol >= 0 && newCol < this.cols && 
+                            this.flagged[newRow][newCol]) {
+                            count++;
+                        }
+                    }
+                }
+                return count;
+            }
+
+            flagCell(row, col) {
+                if (this.revealed[row][col] || this.gameOver || this.gameWon) {
+                    return;
+                }
+                
+                if (!this.flagged[row][col] && this.availableFlags <= 0) {
+                    return; // No flags available
+                }
+                
+                if (!this.flagged[row][col]) {
+                    this.availableFlags--;
+                } else {
+                    this.availableFlags++;
+                }
+                
+                this.flagged[row][col] = !this.flagged[row][col];
+                this.render();
+            }
+
+            changeDifficulty() {
+                const selectedValue = document.getElementById('difficultySelect').value;
+                let selectedMines;
+                
+                if (selectedValue === 'random') {
+                    // Revengeance mode: random between 650-800 mines
+                    selectedMines = Math.floor(Math.random() * (800 - 650 + 1)) + 650;
+                } else {
+                    selectedMines = parseInt(selectedValue);
+                }
+                
+                this.mines = selectedMines;
+                this.availableFlags = selectedMines;
+                this.newGame();
+            }
+
+            bombFunction() {
+                if (this.gameOver || this.gameWon || this.bombsUsed >= 5) return;
+                
+                if (this.bombTargeting) {
+                    // Cancel bomb targeting mode
+                    this.bombTargeting = false;
+                    document.getElementById('bombBtn').textContent = `Bomb (5x5) - ${5 - this.bombsUsed}`;
+                    document.getElementById('bombBtn').style.backgroundColor = '#c0c0c0';
+                } else {
+                    // Enter bomb targeting mode
+                    this.bombTargeting = true;
+                    document.getElementById('bombBtn').textContent = 'Click to Drop Bomb';
+                    document.getElementById('bombBtn').style.backgroundColor = '#ff6b6b';
+                }
+            }
+
+            dropBomb(centerRow, centerCol) {
+                if (this.gameOver || this.gameWon || this.bombsUsed >= 5 || !this.bombTargeting) return;
+                
+                // Reveal 5x5 area around the center
+                for (let row = Math.max(0, centerRow - 2); row <= Math.min(this.rows - 1, centerRow + 2); row++) {
+                    for (let col = Math.max(0, centerCol - 2); col <= Math.min(this.cols - 1, centerCol + 2); col++) {
+                        if (!this.revealed[row][col]) {
+                            if (this.board[row][col] === -1) {
+                                // Flag mines in the 5x5 area
+                                this.flagged[row][col] = true;
+                            } else {
+                                // Reveal non-mine cells
+                                this.revealed[row][col] = true;
+                                this.addScore(5);
+                            }
+                        }
+                    }
+                }
+                
+                // Increment bomb usage and exit targeting mode
+                this.bombsUsed++;
+                this.bombTargeting = false;
+                if (this.bombsUsed >= 5) {
+                    document.getElementById('bombBtn').disabled = true;
+                }
+                document.getElementById('bombBtn').textContent = `Bomb (5x5) - ${5 - this.bombsUsed}`;
+                document.getElementById('bombBtn').style.backgroundColor = '#c0c0c0';
+                
+                this.checkWinCondition();
+                this.render();
+            }
+
+            hintFunction() {
+                if (this.gameOver || this.gameWon || this.hintsUsed >= 5) return;
+                if (this.powersDisabledMode) return;
+                
+                // Find a revealed cell with a number that has unrevealed adjacent cells
+                const hintCandidates = [];
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        if (this.revealed[row][col] && this.board[row][col] > 0) {
+                            // Count unrevealed adjacent cells
+                            let unrevealedAdjacent = 0;
+                            for (let i = -1; i <= 1; i++) {
+                                for (let j = -1; j <= 1; j++) {
+                                    const newRow = row + i;
+                                    const newCol = col + j;
+                                    if (newRow >= 0 && newRow < this.rows && 
+                                        newCol >= 0 && newCol < this.cols && 
+                                        !this.revealed[newRow][newCol] && 
+                                        !this.flagged[newRow][newCol]) {
+                                        unrevealedAdjacent++;
+                                    }
+                                }
+                            }
+                            
+                            // If this cell has unrevealed adjacent cells, it's a good hint candidate
+                            if (unrevealedAdjacent > 0) {
+                                hintCandidates.push({row, col, unrevealedAdjacent});
+                            }
+                        }
+                    }
+                }
+                
+                if (hintCandidates.length === 0) return;
+                
+                // Pick a random hint candidate
+                const hintCell = hintCandidates[Math.floor(Math.random() * hintCandidates.length)];
+                const row = hintCell.row;
+                const col = hintCell.col;
+                
+                // Reveal all unrevealed adjacent cells around this number
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        const newRow = row + i;
+                        const newCol = col + j;
+                        if (newRow >= 0 && newRow < this.rows && 
+                            newCol >= 0 && newCol < this.cols && 
+                            !this.revealed[newRow][newCol] && 
+                            !this.flagged[newRow][newCol]) {
+                            
+                            if (this.board[newRow][newCol] === -1) {
+                                // Flag if it's a mine
+                                this.flagged[newRow][newCol] = true;
+                                this.availableFlags--;
+                            } else {
+                                // Reveal if it's not a mine
+                                this.revealed[newRow][newCol] = true;
+                                this.addScore(5);
+                            }
+                        }
+                    }
+                }
+                
+                // Increment hint usage
+                this.hintsUsed++;
+                if (this.hintsUsed >= 5) {
+                    document.getElementById('hintBtn').disabled = true;
+                }
+                
+                this.checkWinCondition();
+                this.render();
+            }
+
+            mineDetectorFunction() {
+                if (this.gameOver || this.gameWon) return;
+                if (this.powersDisabledMode) return;
+                
+                if (this.mineDetectorActive) {
+                    // Cancel mine detector mode
+                    this.mineDetectorActive = false;
+                    document.getElementById('mineDetectorBtn').textContent = 'Mine Detector (300)';
+                    document.getElementById('mineDetectorBtn').style.backgroundColor = '#c0c0c0';
+                } else {
+                    // Enter mine detector mode
+                    this.mineDetectorActive = true;
+                    document.getElementById('mineDetectorBtn').textContent = 'Click to Detect';
+                    document.getElementById('mineDetectorBtn').style.backgroundColor = '#4CAF50';
+                }
+            }
+
+            useMineDetector(row, col) {
+                if (this.gameOver || this.gameWon || !this.mineDetectorActive) return;
+                
+                // Check if player has enough points
+                if (this.totalScore < 300) {
+                    // Not enough points, cancel detector mode
+                    this.mineDetectorActive = false;
+                    document.getElementById('mineDetectorBtn').textContent = 'Mine Detector (300)';
+                    document.getElementById('mineDetectorBtn').style.backgroundColor = '#c0c0c0';
+                    return;
+                }
+                
+                // Don't work on already revealed or flagged tiles
+                if (this.revealed[row][col] || this.flagged[row][col]) {
+                    return;
+                }
+                
+                // Deduct 300 points
+                this.totalScore -= 300;
+                localStorage.setItem('ms_totalScore', String(this.totalScore));
+                this.updateTotalScore();
+                
+                // Check the tile
+                if (this.board[row][col] === -1) {
+                    // It's a mine - flag it
+                    this.flagged[row][col] = true;
+                    this.availableFlags--;
+                } else {
+                    // It's safe - reveal it
+                    this.revealed[row][col] = true;
+                    this.addScore(5);
+                }
+                
+                // Exit detector mode after use
+                this.mineDetectorActive = false;
+                document.getElementById('mineDetectorBtn').textContent = 'Mine Detector (300)';
+                document.getElementById('mineDetectorBtn').style.backgroundColor = '#c0c0c0';
+                
+                this.checkWinCondition();
+                this.render();
+            }
+
+            revealMineFunction() {
+                if (this.gameOver || this.gameWon) return;
+                if (this.powersDisabledMode) return;
+                
+                // Find mines that are adjacent to revealed tiles
+                const adjacentMines = [];
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        if (this.board[row][col] === -1 && !this.revealed[row][col] && !this.flagged[row][col]) {
+                            // Check if this mine is adjacent to any revealed tile
+                            for (let i = -1; i <= 1; i++) {
+                                for (let j = -1; j <= 1; j++) {
+                                    const newRow = row + i;
+                                    const newCol = col + j;
+                                    if (newRow >= 0 && newRow < this.rows && 
+                                        newCol >= 0 && newCol < this.cols && 
+                                        this.revealed[newRow][newCol]) {
+                                        adjacentMines.push({row, col});
+                                        break;
+                                    }
+                                }
+                                if (adjacentMines.some(mine => mine.row === row && mine.col === col)) break;
+                            }
+                        }
+                    }
+                }
+                
+                if (adjacentMines.length === 0) return;
+                
+                // Pick a random mine adjacent to revealed tiles
+                const randomMine = adjacentMines[Math.floor(Math.random() * adjacentMines.length)];
+                this.flagged[randomMine.row][randomMine.col] = true;
+                this.availableFlags--;
+                
+                // Deduct 500 points from total score
+                this.totalScore = Math.max(0, this.totalScore - 500);
+                localStorage.setItem('ms_totalScore', String(this.totalScore));
+                this.updateTotalScore();
+                
+                this.checkWinCondition();
+                this.render();
+            }
+
+            buyFlagFunction() {
+                if (this.gameOver || this.gameWon) return;
+                if (this.powersDisabledMode) return;
+                
+                // Check if player has enough points
+                if (this.totalScore >= 100) {
+                    this.totalScore -= 100;
+                    this.availableFlags++;
+                    localStorage.setItem('ms_totalScore', String(this.totalScore));
+                    this.updateTotalScore();
+                    this.updateMineCounter();
+                }
+            }
+
+            revealAllMines() {
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        if (!this.revealed[row][col]) {
+                            this.revealed[row][col] = true;
+                        }
+                    }
+                }
+            }
+
+            checkWinCondition() {
+                let flaggedMines = 0;
+                let coveredTiles = 0;
+                
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        if (this.flagged[row][col] && this.board[row][col] === -1) {
+                            flaggedMines++;
+                        }
+                        if (!this.revealed[row][col] && !this.flagged[row][col]) {
+                            coveredTiles++;
+                        }
+                    }
+                }
+                
+                // Win if all mines are flagged AND no tiles are left uncovered
+                if (flaggedMines === this.mines && coveredTiles === 0) {
+                    this.gameWon = true;
+                    this.stopTimer();
+                    // Award 500 points per mine when winning
+                    this.addScore(500 * this.mines);
+                }
+            }
+
+            updateMineCounter() {
+                const flaggedCount = this.flagged.flat().filter(flag => flag).length;
+                const remainingMines = this.mines - flaggedCount;
+                document.getElementById('mineCounter').textContent = 
+                    remainingMines.toString().padStart(3, '0');
+                
+                // Update buy flag button text to show available flags
+                document.getElementById('buyFlagBtn').textContent = `Buy Flag (100) - ${this.availableFlags}`;
+                
+                // Update the corner display to show total flags available
+                document.getElementById('mineCounter').textContent = 
+                    this.availableFlags.toString().padStart(3, '0');
+            }
+
+            updateScore() {
+                document.getElementById('score').textContent = this.score.toString().padStart(5, '0');
+            }
+
+            addScore(points) {
+                const multiplier = this.powersDisabledMode ? 2 : 1;
+                const awarded = points * multiplier;
+                this.score += awarded;
+                this.totalScore += awarded;
+                localStorage.setItem('ms_totalScore', String(this.totalScore));
+                this.updateScore();
+                this.updateTotalScore();
+            }
+
+            updateTotalScore() {
+                document.getElementById('totalScore').textContent = this.totalScore.toString().padStart(5, '0');
+            }
+
+            updateGameStatus() {
+                const statusElement = document.getElementById('gameStatus');
+                if (this.gameWon) {
+                    statusElement.textContent = '🎉 You Win! 🎉';
+                    statusElement.className = 'game-status win';
+                } else if (this.gameOver) {
+                    statusElement.textContent = '💥 Game Over! 💥';
+                    statusElement.className = 'game-status lose';
+                } else {
+                    statusElement.textContent = '';
+                    statusElement.className = 'game-status';
+                }
+            }
+
+            startTimer() {
+                this.timerInterval = setInterval(() => {
+                    if (this.startTime) {
+                        const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+                        document.getElementById('timer').textContent = 
+                            Math.min(elapsed, 999).toString().padStart(3, '0');
+                    }
+                }, 100);
+            }
+
+            stopTimer() {
+                if (this.timerInterval) {
+                    clearInterval(this.timerInterval);
+                    this.timerInterval = null;
+                }
+            }
+
+            newGame() {
+                this.stopTimer();
+                this.initializeBoard();
+                this.gameOver = false;
+                this.gameWon = false;
+                this.startTime = null;
+                this.bombsUsed = 0;
+                this.mineRevealed = false;
+                this.bombTargeting = false;
+                this.mineDetectorActive = false;
+                this.hintsUsed = 0;
+                this.lostMineRow = null;
+                this.lostMineCol = null;
+                this.availableFlags = this.mines;
+                document.getElementById('bombBtn').disabled = false;
+                document.getElementById('mineDetectorBtn').textContent = 'Mine Detector (300)';
+                document.getElementById('mineDetectorBtn').style.backgroundColor = '#c0c0c0';
+                document.getElementById('bombBtn').textContent = 'Bomb (5x5) - 5';
+                document.getElementById('bombBtn').style.backgroundColor = '#c0c0c0';
+                document.getElementById('hintBtn').disabled = false;
+                document.getElementById('revealMineBtn').disabled = false;
+                this.score = 0;
+                this.render();
+            }
+
+            // ===== Powers Disabled Mode =====
+            togglePowers() {
+                this.powersDisabledMode = !this.powersDisabledMode;
+                const btn = document.getElementById('powersToggleBtn');
+                btn.textContent = this.powersDisabledMode ? 'Powers: Off' : 'Powers: On';
+                // Reflect disabled state in UI (except bombs)
+                const disable = this.powersDisabledMode;
+                document.getElementById('hintBtn').disabled = disable || this.hintsUsed >= 5;
+                document.getElementById('revealMineBtn').disabled = disable;
+                document.getElementById('mineDetectorBtn').disabled = disable;
+                document.getElementById('buyFlagBtn').disabled = disable;
+            }
+
+            // ===== Simple Mini Game =====
+            openMiniGame() {
+                const overlay = document.getElementById('miniGameModal');
+                overlay.style.display = 'flex';
+                this.setupMiniGameShell();
+            }
+
+            closeMiniGame() {
+                const overlay = document.getElementById('miniGameModal');
+                overlay.style.display = 'none';
+                this.teardownMiniGame();
+            }
+
+            setupMiniGameShell() {
+                const target = document.getElementById('target');
+                const area = document.getElementById('targetArea');
+                const info = document.getElementById('miniGameInfo');
+                const startBtn = document.getElementById('startMiniGameBtn');
+                const closeBtn = document.getElementById('closeMiniGameBtn');
+                const select = document.getElementById('miniGameSelect');
+                const desc = document.getElementById('miniGameDesc');
+                const reaction = document.getElementById('reactionLight');
+                const reactionText = document.getElementById('reactionText');
+                const simonGrid = document.getElementById('simonGrid');
+                const mathWrap = document.getElementById('mathWrap');
+                const mathQuestion = document.getElementById('mathQuestion');
+                const mathA = document.getElementById('mathA');
+                const mathB = document.getElementById('mathB');
+                const mathC = document.getElementById('mathC');
+                
+                this.miniGame = { hits: 0, goal: 10, timeLeft: 15, interval: null, mover: null };
+                info.textContent = `Choose a minigame to begin.`;
+                reaction.style.display = 'none';
+                simonGrid.style.display = 'none';
+                target.style.display = 'block';
+                target.textContent = '💣';
+                desc.textContent = 'Tap the moving target 10 times in 15 seconds to win 5,000 points.';
+                
+                const clearBindings = () => {
+                    // Stop current round and remove transient handlers so we can swap games
+                    this.miniGameRunning = false;
+                    if (this.miniGame && this.miniGame.interval) { clearInterval(this.miniGame.interval); this.miniGame.interval = null; }
+                    if (this.miniGame && this.miniGame._spawner) { clearInterval(this.miniGame._spawner); this.miniGame._spawner = null; }
+                    target.onclick = null;
+                    target.ontouchstart = null;
+                    area.onclick = null;
+                    area.ontouchstart = null;
+                    Array.from(document.querySelectorAll('#simonGrid .simon')).forEach(el => { el.onclick = null; el.ontouchstart = null; });
+                    // Remove any transient mole targets
+                    Array.from(area.querySelectorAll('.target'))
+                        .filter(el => el.id !== 'target')
+                        .forEach(el => el.remove());
+                    // Reset hold UI
+                    const barWrap = document.getElementById('holdBarWrap');
+                    const bar = document.getElementById('holdBar');
+                    if (barWrap) barWrap.style.display = 'none';
+                    if (bar) bar.style.width = '0%';
+                };
+                
+                const syncUIForSelection = () => {
+                    clearBindings();
+                    const v = select.value;
+                    reaction.style.display = 'none';
+                    simonGrid.style.display = 'none';
+                    target.style.display = 'none';
+                    if (v === 'tap') {
+                        desc.textContent = 'Tap the moving target 10 times in 15 seconds to win 5,000 points.';
+                        target.style.display = 'block';
+                        info.textContent = 'Hits: 0/10 • Time: 15s';
+                        mathWrap.style.display = 'none';
+                    } else if (v === 'react') {
+                        desc.textContent = 'Tap when the screen turns green. Three rounds. Be fast!';
+                        reaction.style.display = 'flex';
+                        reactionText.textContent = 'Wait for green...';
+                        info.textContent = 'Best: — ms';
+                        mathWrap.style.display = 'none';
+                    } else if (v === 'simon') {
+                        desc.textContent = 'Repeat the flashing sequence. Reach 6 steps to win!';
+                        simonGrid.style.display = 'grid';
+                        info.textContent = 'Round: 1 / 6';
+                        mathWrap.style.display = 'none';
+                    } else if (v === 'frenzy') {
+                        desc.textContent = 'Score as many hits as you can in 20s. Each hit = 50 pts.';
+                        target.style.display = 'block';
+                        info.textContent = 'Hits: 0 • Time: 20s';
+                        mathWrap.style.display = 'none';
+                    } else if (v === 'numbers') {
+                        desc.textContent = 'Tap numbers 1→10 in order as fast as possible. Win for finishing (smaller bonus).';
+                        target.style.display = 'block';
+                        info.textContent = 'Next: 1';
+                        mathWrap.style.display = 'none';
+                    } else if (v === 'moles') {
+                        desc.textContent = 'Whack the mines that pop up. 20s round; each hit = 75 pts.';
+                        target.style.display = 'none';
+                        info.textContent = 'Hits: 0 • Time: 20s';
+                        mathWrap.style.display = 'none';
+                    } else if (v === 'hold') {
+                        desc.textContent = 'Press and hold to fill the bar to 100% before time runs out!';
+                        target.style.display = 'none';
+                        info.textContent = 'Hold to charge';
+                        document.getElementById('holdBarWrap').style.display = 'none';
+                        mathWrap.style.display = 'none';
+                    } else if (v === 'math') {
+                        // Only show gray buttons once the game starts
+                        desc.textContent = 'Answer as many questions as you can in 20s. Tap Start to begin!';
+                        info.textContent = 'Ready';
+                        target.style.display = 'none';
+                        reaction.style.display = 'none';
+                        simonGrid.style.display = 'none';
+                        mathWrap.style.display = 'none';
+                    }
+                };
+                select.onchange = syncUIForSelection;
+                syncUIForSelection();
+                
+                const moveTarget = () => {
+                    const maxX = area.clientWidth - 36;
+                    const maxY = area.clientHeight - 36;
+                    const x = Math.floor(Math.random() * (maxX + 1));
+                    const y = Math.floor(Math.random() * (maxY + 1));
+                    target.style.transform = `translate(${x}px, ${y}px)`;
+                };
+                
+                const onHit = (e) => {
+                    e.preventDefault();
+                    if (!this.miniGameRunning || select.value !== 'tap') return;
+                    this.miniGame.hits++;
+                    info.textContent = `Hits: ${this.miniGame.hits}/10 • Time: ${this.miniGame.timeLeft}s`;
+                    moveTarget();
+                    if (this.miniGame.hits >= this.miniGame.goal) this.finishMiniGame(true);
+                };
+                
+                target.addEventListener('click', onHit);
+                target.addEventListener('touchstart', onHit, { passive: false });
+                
+                // Reaction game state
+                const startReaction = () => {
+                    this.miniGameRunning = true;
+                    let clickedTooEarly = false;
+                    reactionText.textContent = 'Wait for green...';
+                    reaction.style.background = '#8e44ad';
+                    const delay = 800 + Math.floor(Math.random() * 2200);
+                    let startTs = 0;
+                    const onAreaTap = () => {
+                        if (!this.miniGameRunning) return;
+                        if (startTs === 0) { clickedTooEarly = true; this.finishMiniGame(false); }
+                        else { const rt = Math.floor(performance.now() - startTs); this._reactionResults.push(rt); this._nextReactionRound(); }
+                    };
+                    area.onclick = onAreaTap;
+                    area.ontouchstart = (e)=>{ e.preventDefault(); onAreaTap(); };
+                    setTimeout(() => {
+                        if (!this.miniGameRunning) return;
+                        reaction.style.background = '#2ecc71';
+                        reactionText.textContent = 'Tap!';
+                        startTs = performance.now();
+                    }, delay);
+                };
+                this._reactionResults = [];
+                this._nextReactionRound = () => {
+                    if (this._reactionResults.length >= 3) {
+                        const best = Math.min(...this._reactionResults);
+                        info.textContent = `Best: ${best} ms`;
+                        // Win if best under 300ms
+                        if (best <= 300) this.finishMiniGame(true); else this.finishMiniGame(false);
+                        return;
+                    }
+                    startReaction();
+                };
+
+                // Simon game state
+                const simonTiles = Array.from(simonGrid.querySelectorAll('.simon'));
+                const flash = async (idx) => {
+                    const el = simonTiles[idx];
+                    const old = el.style.filter;
+                    el.style.filter = 'brightness(2)';
+                    await new Promise(r=>setTimeout(r, 280));
+                    el.style.filter = old || 'brightness(1)';
+                    await new Promise(r=>setTimeout(r, 120));
+                };
+                const playSequence = async (seq) => {
+                    for (const i of seq) { await flash(i); }
+                };
+                const resetSimon = () => {
+                    this._simonSeq = [Math.floor(Math.random()*4)];
+                    this._simonPos = 0;
+                    this._simonRound = 1;
+                    info.textContent = 'Round: 1 / 6';
+                };
+                const startSimon = async () => {
+                    this.miniGameRunning = true;
+                    await playSequence(this._simonSeq);
+                };
+                simonTiles.forEach(tile => {
+                    const onTap = async () => {
+                        if (!this.miniGameRunning || select.value !== 'simon') return;
+                        const idx = Number(tile.dataset.idx);
+                        if (idx === this._simonSeq[this._simonPos]) {
+                            this._simonPos++;
+                            if (this._simonPos >= this._simonSeq.length) {
+                                // next round
+                                this._simonRound++;
+                                info.textContent = `Round: ${this._simonRound} / 6`;
+                                if (this._simonRound > 6) { this.finishMiniGame(true); return; }
+                                this._simonSeq.push(Math.floor(Math.random()*4));
+                                this._simonPos = 0;
+                                await new Promise(r=>setTimeout(r, 400));
+                                await playSequence(this._simonSeq);
+                            }
+                        } else {
+                            this.finishMiniGame(false);
+                        }
+                    };
+                    tile.onclick = onTap;
+                    tile.ontouchstart = (e)=>{ e.preventDefault(); onTap(); };
+                });
+
+                startBtn.onclick = async () => {
+                    const mode = select.value;
+                    // If a game was running, end it as a loss (no points) before starting new one
+                    if (this.miniGameRunning) {
+                        this.finishMiniGame(false, { losePoints: 0 });
+                    }
+                    clearBindings();
+                    this.miniGameRunning = true;
+                    if (mode === 'tap') {
+                        this.miniGame.hits = 0;
+                        this.miniGame.timeLeft = 15;
+                        moveTarget();
+                        if (this.miniGame.interval) clearInterval(this.miniGame.interval);
+                        this.miniGame.interval = setInterval(() => {
+                            this.miniGame.timeLeft--;
+                            info.textContent = `Hits: ${this.miniGame.hits}/10 • Time: ${this.miniGame.timeLeft}s`;
+                            moveTarget();
+                            if (this.miniGame.timeLeft <= 0) this.finishMiniGame(false);
+                        }, 1000);
+                    } else if (mode === 'react') {
+                        this._reactionResults = [];
+                        this._nextReactionRound();
+                    } else if (mode === 'simon') {
+                        resetSimon();
+                        await startSimon();
+                    } else if (mode === 'frenzy') {
+                        // 20s timed, each hit worth 500
+                        this.miniGame.hits = 0;
+                        this.miniGame.timeLeft = 20;
+                        target.textContent = '🎯';
+                        const onFrenzyTap = (e) => {
+                            e.preventDefault();
+                            if (!this.miniGameRunning) return;
+                            this.miniGame.hits++;
+                            info.textContent = `Hits: ${this.miniGame.hits} • Time: ${this.miniGame.timeLeft}s`;
+                            moveTarget();
+                        };
+                        target.onclick = onFrenzyTap;
+                        target.ontouchstart = (e)=>{ e.preventDefault(); onFrenzyTap(e); };
+                        moveTarget();
+                        if (this.miniGame.interval) clearInterval(this.miniGame.interval);
+                        this.miniGame.interval = setInterval(() => {
+                            this.miniGame.timeLeft--;
+                            info.textContent = `Hits: ${this.miniGame.hits} • Time: ${this.miniGame.timeLeft}s`;
+                            moveTarget();
+                            if (this.miniGame.timeLeft <= 0) {
+                                const pts = this.miniGame.hits * 50;
+                                this.finishMiniGame(true, { winPoints: pts });
+                            }
+                        }, 1000);
+                    } else if (mode === 'numbers') {
+                        // 1 to 10 ordered taps
+                        let next = 1;
+                        target.textContent = String(next);
+                        const numMove = () => moveTarget();
+                        const onNumTap = (e) => {
+                            e.preventDefault();
+                            if (!this.miniGameRunning) return;
+                            const val = Number(target.textContent);
+                            if (val === next) {
+                                next++;
+                                if (next > 10) {
+                                    // reward based on speed: remaining seconds * 200 + 2000 base
+                                    const base = 2000;
+                                    const speed = Math.max(0, (this.miniGame?.timeLeft || 0)) * 200;
+                                    this.finishMiniGame(true, { winPoints: base + speed });
+                                    return;
+                                }
+                                target.textContent = String(next);
+                                info.textContent = `Next: ${next}`;
+                                numMove();
+                            } else {
+                                this.finishMiniGame(false, { losePoints: 1000 });
+                            }
+                        };
+                        target.onclick = onNumTap;
+                        target.ontouchstart = (e)=>{ e.preventDefault(); onNumTap(e); };
+                        this.miniGame.timeLeft = 25; // allow 25s
+                        info.textContent = 'Next: 1';
+                        numMove();
+                        if (this.miniGame.interval) clearInterval(this.miniGame.interval);
+                        this.miniGame.interval = setInterval(() => {
+                            this.miniGame.timeLeft--;
+                            if (this.miniGame.timeLeft <= 0) this.finishMiniGame(false, { losePoints: 0 });
+                        }, 1000);
+                    } else if (mode === 'moles') {
+                        // Whack-a-Mine: spawn tap targets periodically
+                        this.miniGame.hits = 0;
+                        this.miniGame.timeLeft = 20;
+                        const spawn = () => {
+                            if (!this.miniGameRunning) return;
+                            const mole = document.createElement('div');
+                            mole.className = 'target';
+                            mole.textContent = '💥';
+                            const maxX = area.clientWidth - 36;
+                            const maxY = area.clientHeight - 36;
+                            const x = Math.floor(Math.random() * (maxX + 1));
+                            const y = Math.floor(Math.random() * (maxY + 1));
+                            mole.style.transform = `translate(${x}px, ${y}px)`;
+                            const onHit = (e) => {
+                                e.preventDefault();
+                                if (!this.miniGameRunning) return;
+                                this.miniGame.hits++;
+                                info.textContent = `Hits: ${this.miniGame.hits} • Time: ${this.miniGame.timeLeft}s`;
+                                mole.remove();
+                            };
+                            mole.onclick = onHit;
+                            mole.ontouchstart = (e)=>{ e.preventDefault(); onHit(e); };
+                            area.appendChild(mole);
+                            setTimeout(() => mole.remove(), 600);
+                        };
+                        // spawn cadence
+                        const spawner = setInterval(spawn, 500);
+                        this.miniGame._spawner = spawner;
+                        if (this.miniGame.interval) clearInterval(this.miniGame.interval);
+                        this.miniGame.interval = setInterval(() => {
+                            this.miniGame.timeLeft--;
+                            info.textContent = `Hits: ${this.miniGame.hits} • Time: ${this.miniGame.timeLeft}s`;
+                            if (this.miniGame.timeLeft <= 0) {
+                                clearInterval(spawner);
+                                const pts = this.miniGame.hits * 75;
+                                this.finishMiniGame(true, { winPoints: pts });
+                            }
+                        }, 1000);
+                    } else if (mode === 'hold') {
+                        // Hold Challenge: hold down to fill progress bar
+                        const barWrap = document.getElementById('holdBarWrap');
+                        const bar = document.getElementById('holdBar');
+                        barWrap.style.display = 'block';
+                        bar.style.width = '0%';
+                        this.miniGame.timeLeft = 2;
+                        let progress = 0; // 0..100
+                        let holding = false;
+                        const gainRate = 80; // percent per second while holding
+                        const decayRate = 40; // percent per second while not holding
+                        const step = 50; // ms
+                        const tick = () => {
+                            if (!this.miniGameRunning) return;
+                            const delta = holding ? gainRate : -decayRate;
+                            progress = Math.max(0, Math.min(100, progress + (delta * step) / 1000));
+                            bar.style.width = `${progress}%`;
+                            if (progress >= 100) {
+                                this.finishMiniGame(true, { winPoints: 1500 });
+                            } else {
+                                setTimeout(tick, step);
+                            }
+                        };
+                        const setHold = (v) => { holding = v; };
+                        area.onmousedown = ()=>setHold(true);
+                        area.onmouseup = ()=>setHold(false);
+                        area.onmouseleave = ()=>setHold(false);
+                        area.ontouchstart = (e)=>{ e.preventDefault(); setHold(true); };
+                        area.ontouchend = ()=>setHold(false);
+                        tick();
+                        if (this.miniGame.interval) clearInterval(this.miniGame.interval);
+                        this.miniGame.interval = setInterval(() => {
+                            this.miniGame.timeLeft--;
+                            info.textContent = `Time: ${this.miniGame.timeLeft}s`;
+                            if (this.miniGame.timeLeft <= 0 && this.miniGameRunning) this.finishMiniGame(false, { losePoints: Math.floor(progress * 5) });
+                        }, 1000);
+                    } else if (mode === 'math') {
+                        // Show math UI only after Start
+                        mathWrap.style.display = 'flex';
+                        const genQ = () => {
+                            const a = Math.floor(Math.random()*10)+1;
+                            const b = Math.floor(Math.random()*10)+1;
+                            const ops = ['+','-','×'];
+                            const op = ops[Math.floor(Math.random()*ops.length)];
+                            let answer = 0;
+                            if (op === '+') answer = a + b; else if (op === '-') answer = a - b; else answer = a * b;
+                            const choices = [answer, answer + (Math.floor(Math.random()*5)+1), answer - (Math.floor(Math.random()*5)+1)];
+                            // shuffle
+                            for (let i = choices.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [choices[i], choices[j]] = [choices[j], choices[i]]; }
+                            return { text: `${a} ${op} ${b} = ?`, answer, choices };
+                        };
+                        let score = 0;
+                        const ask = () => {
+                            const q = genQ();
+                            mathQuestion.textContent = q.text;
+                            [mathA, mathB, mathC].forEach((btn, i)=>{ btn.textContent = String(q.choices[i]); btn.onclick = () => {
+                                if (!this.miniGameRunning) return;
+                                if (Number(btn.textContent) === q.answer) { score += 1; this.addScore(50); }
+                                ask();
+                            }; });
+                        };
+                        score = 0;
+                        this.miniGame.timeLeft = 20;
+                        info.textContent = 'Time: 20s • Correct: 0';
+                        ask();
+                        if (this.miniGame.interval) clearInterval(this.miniGame.interval);
+                        this.miniGame.interval = setInterval(() => {
+                            this.miniGame.timeLeft--;
+                            info.textContent = `Time: ${this.miniGame.timeLeft}s • Correct: ${score}`;
+                            if (this.miniGame.timeLeft <= 0) {
+                                const pts = score * 100; // final bonus
+                                this.finishMiniGame(true, { winPoints: pts });
+                            }
+                        }, 1000);
+                    }
+                };
+                closeBtn.onclick = () => this.closeMiniGame();
+                this._miniGameMove = moveTarget;
+            }
+
+            teardownMiniGame() {
+                this.miniGameRunning = false;
+                if (this.miniGame && this.miniGame.interval) clearInterval(this.miniGame.interval);
+            }
+
+            finishMiniGame(won, opts = {}) {
+                this.miniGameRunning = false;
+                if (this.miniGame && this.miniGame.interval) clearInterval(this.miniGame.interval);
+                const info = document.getElementById('miniGameInfo');
+                const winPoints = opts.winPoints != null ? opts.winPoints : 5000;
+                // default lose points: use supplied losePoints else proportional to hits (reduced)
+                const losePoints = opts.losePoints != null ? opts.losePoints : Math.floor((this.miniGame?.hits || 0) * 2);
+                if (won) {
+                    this.addScore(winPoints);
+                    info.textContent = `You win! +${winPoints.toLocaleString()} points`;
+                } else {
+                    this.addScore(losePoints);
+                    info.textContent = `Nice try! +${losePoints.toLocaleString()} points`;
+                }
+            }
+        }
+
+        // Initialize the game
+        const game = new Minesweeper(40, 40, 325);
+    </script>
+</body>
+</html>
