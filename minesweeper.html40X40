@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minesweeper</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .game-container {
+            background-color: #c0c0c0;
+            padding: 20px;
+            border: 3px outset #c0c0c0;
+            border-radius: 5px;
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow: auto;
+        }
+
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #c0c0c0;
+            border: 2px inset #c0c0c0;
+        }
+
+        .mine-counter, .timer, .score {
+            background-color: #000;
+            color: #f00;
+            font-family: 'Courier New', monospace;
+            font-size: 24px;
+            font-weight: bold;
+            padding: 5px 10px;
+            border: 2px inset #c0c0c0;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .btn {
+            background-color: #c0c0c0;
+            border: 2px outset #c0c0c0;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .btn:hover {
+            background-color: #d0d0d0;
+        }
+
+        .btn:active {
+            border: 2px inset #c0c0c0;
+        }
+
+        .btn:disabled {
+            background-color: #a0a0a0;
+            cursor: not-allowed;
+        }
+
+        .game-board {
+            display: grid;
+            gap: 1px;
+            background-color: #c0c0c0;
+            border: none;
+            padding: 0;
+            overflow: auto;
+            max-height: 70vh;
+        }
+
+        .cell {
+            width: 30px;
+            height: 30px;
+            background-color: #c0c0c0;
+            border: 1px solid #808080;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .cell:hover {
+            background-color: #d0d0d0;
+        }
+
+        .cell.revealed {
+            background-color: #87CEEB;
+            border: 1px solid #808080;
+            cursor: default;
+        }
+
+        .cell.revealed:hover {
+            background-color: #87CEEB;
+        }
+
+        .cell.flagged {
+            background-color: #87CEEB;
+            color: #f00;
+        }
+
+        .cell.mine {
+            background-color: #f00;
+            color: #fff;
+        }
+
+        .cell.mine-lost {
+            background-color: #0066ff;
+            color: #fff;
+        }
+
+        .cell.mine-flagged {
+            background-color: #0f0;
+            color: #000;
+        }
+
+        .cell.number-0 { color: #808080; }
+        .cell.number-1 { color: #0000ff; }
+        .cell.number-2 { color: #008000; }
+        .cell.number-3 { color: #ff0000; }
+        .cell.number-4 { color: #000080; }
+        .cell.number-5 { color: #800000; }
+        .cell.number-6 { color: #008080; }
+        .cell.number-7 { color: #000000; }
+        .cell.number-8 { color: #808080; }
+
+        .game-status {
+            margin-top: 15px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .win { color: #008000; }
+        .lose { color: #ff0000; }
+    </style>
+</head>
+<body>
+    <h1>Minesweeper</h1>
+    
+    <div class="game-container">
+        <div class="game-header">
+            <div class="mine-counter" id="mineCounter">325</div>
+            <div class="score" id="score">00000</div>
+            <div class="score" id="totalScore">00000</div>
+            <div class="controls">
+                <button class="btn" id="newGameBtn">New Game</button>
+                <select class="btn" id="difficultySelect" style="padding: 8px 12px;">
+                    <option value="200">Easy (200 mines)</option>
+                    <option value="325" selected>Medium (325 mines)</option>
+                    <option value="450">Hard (450 mines)</option>
+                    <option value="500">Expert (500 mines)</option>
+                    <option value="random">Revengeance (650-800 mines)</option>
+                </select>
+                <button class="btn" id="bombBtn">Bomb (5x5)</button>
+                <button class="btn" id="hintBtn">Hint</button>
+                <button class="btn" id="revealMineBtn">Reveal Mine</button>
+                <button class="btn" id="mineDetectorBtn">Mine Detector (300)</button>
+                <button class="btn" id="buyFlagBtn">Buy Flag (100)</button>
+            </div>
+            <div class="timer" id="timer">000</div>
+        </div>
+        
+        <div class="game-board" id="gameBoard"></div>
+        
+        <div class="game-status" id="gameStatus"></div>
+    </div>
+
+    <script>
+        class Minesweeper {
+            constructor(rows = 16, cols = 16, mines = 40) {
+                this.rows = rows;
+                this.cols = cols;
+                this.mines = mines;
+                this.board = [];
+                this.revealed = [];
+                this.flagged = [];
+                this.gameOver = false;
+                this.gameWon = false;
+                this.startTime = null;
+                this.timerInterval = null;
+                this.holdTimer = null;
+                this.holdThreshold = 500; // milliseconds to hold for flag
+                this.bombsUsed = 0; // Track number of bombs used (max 5)
+                this.mineRevealed = false; // Track if mine has been revealed
+                this.bombTargeting = false; // Track if bomb targeting mode is active
+                this.mineDetectorActive = false; // Track if mine detector is active
+                this.hintsUsed = 0; // Track number of hints used (max 5)
+                this.score = 0; // Track score (5 points per revealed safe tile)
+                this.totalScore = Number(localStorage.getItem('ms_totalScore') || '0');
+                this.lostMineRow = null; // Track which mine caused the loss
+                this.lostMineCol = null;
+                this.availableFlags = this.mines; // Start with flags equal to mine count
+                
+                this.initializeBoard();
+                this.setupEventListeners();
+                this.render();
+            }
+
+            initializeBoard() {
+                // Initialize empty board
+                this.board = Array(this.rows).fill().map(() => Array(this.cols).fill(0));
+                this.revealed = Array(this.rows).fill().map(() => Array(this.cols).fill(false));
+                this.flagged = Array(this.rows).fill().map(() => Array(this.cols).fill(false));
+                
+                // Place mines randomly
+                let minesPlaced = 0;
+                while (minesPlaced < this.mines) {
+                    const row = Math.floor(Math.random() * this.rows);
+                    const col = Math.floor(Math.random() * this.cols);
+                    if (this.board[row][col] !== -1) {
+                        this.board[row][col] = -1; // -1 represents a mine
+                        minesPlaced++;
+                    }
+                }
+                
+                // Calculate numbers for each cell
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        if (this.board[row][col] !== -1) {
+                            this.board[row][col] = this.countAdjacentMines(row, col);
+                        }
+                    }
+                }
+            }
+
+            countAdjacentMines(row, col) {
+                let count = 0;
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        const newRow = row + i;
+                        const newCol = col + j;
+                        if (newRow >= 0 && newRow < this.rows && 
+                            newCol >= 0 && newCol < this.cols && 
+                            this.board[newRow][newCol] === -1) {
+                            count++;
+                        }
+                    }
+                }
+                return count;
+            }
+
+            setupEventListeners() {
+                document.getElementById('newGameBtn').addEventListener('click', () => this.newGame());
+                document.getElementById('difficultySelect').addEventListener('change', () => this.changeDifficulty());
+                document.getElementById('bombBtn').addEventListener('click', () => this.bombFunction());
+                document.getElementById('hintBtn').addEventListener('click', () => this.hintFunction());
+                document.getElementById('revealMineBtn').addEventListener('click', () => this.revealMineFunction());
+                document.getElementById('mineDetectorBtn').addEventListener('click', () => this.mineDetectorFunction());
+                document.getElementById('buyFlagBtn').addEventListener('click', () => this.buyFlagFunction());
+            }
+
+            render() {
+                const gameBoard = document.getElementById('gameBoard');
+                gameBoard.innerHTML = '';
+                gameBoard.style.gridTemplateColumns = `repeat(${this.cols}, 30px)`;
+                
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell';
+                        cell.dataset.row = row;
+                        cell.dataset.col = col;
+                        
+                        if (this.revealed[row][col]) {
+                            cell.classList.add('revealed');
+                            if (this.board[row][col] === -1) {
+                                if (row === this.lostMineRow && col === this.lostMineCol) {
+                                    cell.classList.add('mine-lost');
+                                } else {
+                                    cell.classList.add('mine');
+                                }
+                                cell.textContent = '💣';
+                            } else {
+                                cell.classList.add(`number-${this.board[row][col]}`);
+                                cell.textContent = this.board[row][col];
+                            }
+                        } else if (this.flagged[row][col]) {
+                            cell.classList.add('flagged');
+                            cell.textContent = '🚩';
+                        }
+                        
+                        // Mouse events
+                        cell.addEventListener('mousedown', (e) => this.handleMouseDown(e, row, col));
+                        cell.addEventListener('mouseup', (e) => this.handleMouseUp(e, row, col));
+                        cell.addEventListener('mouseleave', () => this.handleMouseLeave(row, col));
+                        cell.addEventListener('contextmenu', (e) => e.preventDefault());
+                        
+                        gameBoard.appendChild(cell);
+                    }
+                }
+                
+                this.updateMineCounter();
+                this.updateScore();
+                this.updateTotalScore();
+                this.updateGameStatus();
+            }
+
+            handleMouseDown(e, row, col) {
+                if (this.gameOver || this.gameWon) return;
+                
+                if (e.button === 0) { // Left click
+                    this.holdTimer = setTimeout(() => {
+                        this.flagCell(row, col);
+                    }, this.holdThreshold);
+                }
+            }
+
+            handleMouseUp(e, row, col) {
+                if (this.gameOver || this.gameWon) return;
+                
+                if (this.holdTimer) {
+                    clearTimeout(this.holdTimer);
+                    this.holdTimer = null;
+                }
+                
+                if (e.button === 0) { // Left click
+                    if (this.bombTargeting) {
+                        this.dropBomb(row, col);
+                    } else if (this.mineDetectorActive) {
+                        this.useMineDetector(row, col);
+                    } else if (this.flagged[row][col]) {
+                        // Don't do anything if clicking on a flagged tile
+                        return;
+                    } else if (this.revealed[row][col]) {
+                        this.revealAdjacentCells(row, col);
+                    } else {
+                        this.revealCell(row, col);
+                    }
+                }
+            }
+
+            handleMouseLeave(row, col) {
+                if (this.holdTimer) {
+                    clearTimeout(this.holdTimer);
+                    this.holdTimer = null;
+                }
+            }
+
+            revealCell(row, col) {
+                if (this.revealed[row][col] || this.flagged[row][col] || this.gameOver || this.gameWon) {
+                    return;
+                }
+                
+                if (!this.startTime) {
+                    this.startTime = Date.now();
+                    this.startTimer();
+                }
+                
+                this.revealed[row][col] = true;
+                if (this.board[row][col] !== -1) {
+                    this.addScore(5);
+                }
+                
+                if (this.board[row][col] === -1) {
+                    this.gameOver = true;
+                    this.lostMineRow = row;
+                    this.lostMineCol = col;
+                    this.revealAllMines();
+                    this.stopTimer();
+                } else if (this.board[row][col] === 0) {
+                    // Auto-reveal adjacent cells for empty cells
+                    this.revealAdjacentCells(row, col);
+                }
+                
+                this.checkWinCondition();
+                this.render();
+            }
+
+            revealAdjacentCells(row, col) {
+                if (!this.revealed[row][col]) return;
+                
+                const adjacentFlags = this.countAdjacentFlags(row, col);
+                const adjacentMines = this.board[row][col];
+                
+                // Only reveal if flag count matches the number on the tile
+                if (adjacentFlags === adjacentMines) {
+                    for (let i = -1; i <= 1; i++) {
+                        for (let j = -1; j <= 1; j++) {
+                            const newRow = row + i;
+                            const newCol = col + j;
+                            if (newRow >= 0 && newRow < this.rows && 
+                                newCol >= 0 && newCol < this.cols && 
+                                !this.revealed[newRow][newCol] && 
+                                !this.flagged[newRow][newCol]) {
+                                this.revealCell(newRow, newCol);
+                            }
+                        }
+                    }
+                }
+            }
+
+            countAdjacentFlags(row, col) {
+                let count = 0;
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        const newRow = row + i;
+                        const newCol = col + j;
+                        if (newRow >= 0 && newRow < this.rows && 
+                            newCol >= 0 && newCol < this.cols && 
+                            this.flagged[newRow][newCol]) {
+                            count++;
+                        }
+                    }
+                }
+                return count;
+            }
+
+            flagCell(row, col) {
+                if (this.revealed[row][col] || this.gameOver || this.gameWon) {
+                    return;
+                }
+                
+                if (!this.flagged[row][col] && this.availableFlags <= 0) {
+                    return; // No flags available
+                }
+                
+                if (!this.flagged[row][col]) {
+                    this.availableFlags--;
+                } else {
+                    this.availableFlags++;
+                }
+                
+                this.flagged[row][col] = !this.flagged[row][col];
+                this.render();
+            }
+
+            changeDifficulty() {
+                const selectedValue = document.getElementById('difficultySelect').value;
+                let selectedMines;
+                
+                if (selectedValue === 'random') {
+                    // Revengeance mode: random between 650-800 mines
+                    selectedMines = Math.floor(Math.random() * (800 - 650 + 1)) + 650;
+                } else {
+                    selectedMines = parseInt(selectedValue);
+                }
+                
+                this.mines = selectedMines;
+                this.availableFlags = selectedMines;
+                this.newGame();
+            }
+
+            bombFunction() {
+                if (this.gameOver || this.gameWon || this.bombsUsed >= 5) return;
+                
+                if (this.bombTargeting) {
+                    // Cancel bomb targeting mode
+                    this.bombTargeting = false;
+                    document.getElementById('bombBtn').textContent = `Bomb (5x5) - ${5 - this.bombsUsed}`;
+                    document.getElementById('bombBtn').style.backgroundColor = '#c0c0c0';
+                } else {
+                    // Enter bomb targeting mode
+                    this.bombTargeting = true;
+                    document.getElementById('bombBtn').textContent = 'Click to Drop Bomb';
+                    document.getElementById('bombBtn').style.backgroundColor = '#ff6b6b';
+                }
+            }
+
+            dropBomb(centerRow, centerCol) {
+                if (this.gameOver || this.gameWon || this.bombsUsed >= 5 || !this.bombTargeting) return;
+                
+                // Reveal 5x5 area around the center
+                for (let row = Math.max(0, centerRow - 2); row <= Math.min(this.rows - 1, centerRow + 2); row++) {
+                    for (let col = Math.max(0, centerCol - 2); col <= Math.min(this.cols - 1, centerCol + 2); col++) {
+                        if (!this.revealed[row][col]) {
+                            if (this.board[row][col] === -1) {
+                                // Flag mines in the 5x5 area
+                                this.flagged[row][col] = true;
+                            } else {
+                                // Reveal non-mine cells
+                                this.revealed[row][col] = true;
+                                this.addScore(5);
+                            }
+                        }
+                    }
+                }
+                
+                // Increment bomb usage and exit targeting mode
+                this.bombsUsed++;
+                this.bombTargeting = false;
+                if (this.bombsUsed >= 5) {
+                    document.getElementById('bombBtn').disabled = true;
+                }
+                document.getElementById('bombBtn').textContent = `Bomb (5x5) - ${5 - this.bombsUsed}`;
+                document.getElementById('bombBtn').style.backgroundColor = '#c0c0c0';
+                
+                this.checkWinCondition();
+                this.render();
+            }
+
+            hintFunction() {
+                if (this.gameOver || this.gameWon || this.hintsUsed >= 5) return;
+                
+                // Find a revealed cell with a number that has unrevealed adjacent cells
+                const hintCandidates = [];
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        if (this.revealed[row][col] && this.board[row][col] > 0) {
+                            // Count unrevealed adjacent cells
+                            let unrevealedAdjacent = 0;
+                            for (let i = -1; i <= 1; i++) {
+                                for (let j = -1; j <= 1; j++) {
+                                    const newRow = row + i;
+                                    const newCol = col + j;
+                                    if (newRow >= 0 && newRow < this.rows && 
+                                        newCol >= 0 && newCol < this.cols && 
+                                        !this.revealed[newRow][newCol] && 
+                                        !this.flagged[newRow][newCol]) {
+                                        unrevealedAdjacent++;
+                                    }
+                                }
+                            }
+                            
+                            // If this cell has unrevealed adjacent cells, it's a good hint candidate
+                            if (unrevealedAdjacent > 0) {
+                                hintCandidates.push({row, col, unrevealedAdjacent});
+                            }
+                        }
+                    }
+                }
+                
+                if (hintCandidates.length === 0) return;
+                
+                // Pick a random hint candidate
+                const hintCell = hintCandidates[Math.floor(Math.random() * hintCandidates.length)];
+                const row = hintCell.row;
+                const col = hintCell.col;
+                
+                // Reveal all unrevealed adjacent cells around this number
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        const newRow = row + i;
+                        const newCol = col + j;
+                        if (newRow >= 0 && newRow < this.rows && 
+                            newCol >= 0 && newCol < this.cols && 
+                            !this.revealed[newRow][newCol] && 
+                            !this.flagged[newRow][newCol]) {
+                            
+                            if (this.board[newRow][newCol] === -1) {
+                                // Flag if it's a mine
+                                this.flagged[newRow][newCol] = true;
+                                this.availableFlags--;
+                            } else {
+                                // Reveal if it's not a mine
+                                this.revealed[newRow][newCol] = true;
+                                this.addScore(5);
+                            }
+                        }
+                    }
+                }
+                
+                // Increment hint usage
+                this.hintsUsed++;
+                if (this.hintsUsed >= 5) {
+                    document.getElementById('hintBtn').disabled = true;
+                }
+                
+                this.checkWinCondition();
+                this.render();
+            }
+
+            mineDetectorFunction() {
+                if (this.gameOver || this.gameWon) return;
+                
+                if (this.mineDetectorActive) {
+                    // Cancel mine detector mode
+                    this.mineDetectorActive = false;
+                    document.getElementById('mineDetectorBtn').textContent = 'Mine Detector (300)';
+                    document.getElementById('mineDetectorBtn').style.backgroundColor = '#c0c0c0';
+                } else {
+                    // Enter mine detector mode
+                    this.mineDetectorActive = true;
+                    document.getElementById('mineDetectorBtn').textContent = 'Click to Detect';
+                    document.getElementById('mineDetectorBtn').style.backgroundColor = '#4CAF50';
+                }
+            }
+
+            useMineDetector(row, col) {
+                if (this.gameOver || this.gameWon || !this.mineDetectorActive) return;
+                
+                // Check if player has enough points
+                if (this.totalScore < 300) {
+                    // Not enough points, cancel detector mode
+                    this.mineDetectorActive = false;
+                    document.getElementById('mineDetectorBtn').textContent = 'Mine Detector (300)';
+                    document.getElementById('mineDetectorBtn').style.backgroundColor = '#c0c0c0';
+                    return;
+                }
+                
+                // Don't work on already revealed or flagged tiles
+                if (this.revealed[row][col] || this.flagged[row][col]) {
+                    return;
+                }
+                
+                // Deduct 300 points
+                this.totalScore -= 300;
+                localStorage.setItem('ms_totalScore', String(this.totalScore));
+                this.updateTotalScore();
+                
+                // Check the tile
+                if (this.board[row][col] === -1) {
+                    // It's a mine - flag it
+                    this.flagged[row][col] = true;
+                    this.availableFlags--;
+                } else {
+                    // It's safe - reveal it
+                    this.revealed[row][col] = true;
+                    this.addScore(5);
+                }
+                
+                // Exit detector mode after use
+                this.mineDetectorActive = false;
+                document.getElementById('mineDetectorBtn').textContent = 'Mine Detector (300)';
+                document.getElementById('mineDetectorBtn').style.backgroundColor = '#c0c0c0';
+                
+                this.checkWinCondition();
+                this.render();
+            }
+
+            revealMineFunction() {
+                if (this.gameOver || this.gameWon) return;
+                
+                // Find mines that are adjacent to revealed tiles
+                const adjacentMines = [];
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        if (this.board[row][col] === -1 && !this.revealed[row][col] && !this.flagged[row][col]) {
+                            // Check if this mine is adjacent to any revealed tile
+                            for (let i = -1; i <= 1; i++) {
+                                for (let j = -1; j <= 1; j++) {
+                                    const newRow = row + i;
+                                    const newCol = col + j;
+                                    if (newRow >= 0 && newRow < this.rows && 
+                                        newCol >= 0 && newCol < this.cols && 
+                                        this.revealed[newRow][newCol]) {
+                                        adjacentMines.push({row, col});
+                                        break;
+                                    }
+                                }
+                                if (adjacentMines.some(mine => mine.row === row && mine.col === col)) break;
+                            }
+                        }
+                    }
+                }
+                
+                if (adjacentMines.length === 0) return;
+                
+                // Pick a random mine adjacent to revealed tiles
+                const randomMine = adjacentMines[Math.floor(Math.random() * adjacentMines.length)];
+                this.flagged[randomMine.row][randomMine.col] = true;
+                this.availableFlags--;
+                
+                // Deduct 500 points from total score
+                this.totalScore = Math.max(0, this.totalScore - 500);
+                localStorage.setItem('ms_totalScore', String(this.totalScore));
+                this.updateTotalScore();
+                
+                this.checkWinCondition();
+                this.render();
+            }
+
+            buyFlagFunction() {
+                if (this.gameOver || this.gameWon) return;
+                
+                // Check if player has enough points
+                if (this.totalScore >= 100) {
+                    this.totalScore -= 100;
+                    this.availableFlags++;
+                    localStorage.setItem('ms_totalScore', String(this.totalScore));
+                    this.updateTotalScore();
+                    this.updateMineCounter();
+                }
+            }
+
+            revealAllMines() {
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        if (!this.revealed[row][col]) {
+                            this.revealed[row][col] = true;
+                        }
+                    }
+                }
+            }
+
+            checkWinCondition() {
+                let flaggedMines = 0;
+                let coveredTiles = 0;
+                
+                for (let row = 0; row < this.rows; row++) {
+                    for (let col = 0; col < this.cols; col++) {
+                        if (this.flagged[row][col] && this.board[row][col] === -1) {
+                            flaggedMines++;
+                        }
+                        if (!this.revealed[row][col] && !this.flagged[row][col]) {
+                            coveredTiles++;
+                        }
+                    }
+                }
+                
+                // Win if all mines are flagged AND no tiles are left uncovered
+                if (flaggedMines === this.mines && coveredTiles === 0) {
+                    this.gameWon = true;
+                    this.stopTimer();
+                }
+            }
+
+            updateMineCounter() {
+                const flaggedCount = this.flagged.flat().filter(flag => flag).length;
+                const remainingMines = this.mines - flaggedCount;
+                document.getElementById('mineCounter').textContent = 
+                    remainingMines.toString().padStart(3, '0');
+                
+                // Update buy flag button text to show available flags
+                document.getElementById('buyFlagBtn').textContent = `Buy Flag (100) - ${this.availableFlags}`;
+                
+                // Update the corner display to show total flags available
+                document.getElementById('mineCounter').textContent = 
+                    this.availableFlags.toString().padStart(3, '0');
+            }
+
+            updateScore() {
+                document.getElementById('score').textContent = this.score.toString().padStart(5, '0');
+            }
+
+            addScore(points) {
+                this.score += points;
+                this.totalScore += points;
+                localStorage.setItem('ms_totalScore', String(this.totalScore));
+                this.updateScore();
+                this.updateTotalScore();
+            }
+
+            updateTotalScore() {
+                document.getElementById('totalScore').textContent = this.totalScore.toString().padStart(5, '0');
+            }
+
+            updateGameStatus() {
+                const statusElement = document.getElementById('gameStatus');
+                if (this.gameWon) {
+                    statusElement.textContent = '🎉 You Win! 🎉';
+                    statusElement.className = 'game-status win';
+                } else if (this.gameOver) {
+                    statusElement.textContent = '💥 Game Over! 💥';
+                    statusElement.className = 'game-status lose';
+                } else {
+                    statusElement.textContent = '';
+                    statusElement.className = 'game-status';
+                }
+            }
+
+            startTimer() {
+                this.timerInterval = setInterval(() => {
+                    if (this.startTime) {
+                        const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+                        document.getElementById('timer').textContent = 
+                            Math.min(elapsed, 999).toString().padStart(3, '0');
+                    }
+                }, 100);
+            }
+
+            stopTimer() {
+                if (this.timerInterval) {
+                    clearInterval(this.timerInterval);
+                    this.timerInterval = null;
+                }
+            }
+
+            newGame() {
+                this.stopTimer();
+                this.initializeBoard();
+                this.gameOver = false;
+                this.gameWon = false;
+                this.startTime = null;
+                this.bombsUsed = 0;
+                this.mineRevealed = false;
+                this.bombTargeting = false;
+                this.mineDetectorActive = false;
+                this.hintsUsed = 0;
+                this.lostMineRow = null;
+                this.lostMineCol = null;
+                this.availableFlags = this.mines;
+                document.getElementById('bombBtn').disabled = false;
+                document.getElementById('mineDetectorBtn').textContent = 'Mine Detector (300)';
+                document.getElementById('mineDetectorBtn').style.backgroundColor = '#c0c0c0';
+                document.getElementById('bombBtn').textContent = 'Bomb (5x5) - 5';
+                document.getElementById('bombBtn').style.backgroundColor = '#c0c0c0';
+                document.getElementById('hintBtn').disabled = false;
+                document.getElementById('revealMineBtn').disabled = false;
+                this.score = 0;
+                this.render();
+            }
+        }
+
+        // Initialize the game
+        const game = new Minesweeper(40, 40, 325);
+    </script>
+</body>
+</html>
