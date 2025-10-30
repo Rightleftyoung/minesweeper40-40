@@ -151,7 +151,7 @@
 
         .win { color: #008000; }
         .lose { color: #ff0000; }
-        
+
         /* Simple modal for minigame */
         /* Disable selection on mobile */
         html, body, .game-container, .btn, .cell {
@@ -201,6 +201,30 @@
             user-select: none;
             -webkit-user-select: none;
         }
+        .size-editor-group {
+            display: grid;
+            gap: 6px;
+            margin-bottom: 12px;
+            text-align: left;
+        }
+        .size-editor-group label {
+            font-weight: bold;
+        }
+        .size-editor-group input[type="number"] {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #808080;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .size-editor-group input[type="range"] {
+            width: 100%;
+        }
+        .size-editor-summary {
+            margin-top: 8px;
+            text-align: center;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -214,11 +238,12 @@
             <div class="controls">
                 <button class="btn" id="newGameBtn">New Game</button>
                 <select class="btn" id="difficultySelect" style="padding: 8px 12px;">
-                    <option value="200">Easy (200 mines)</option>
-                    <option value="325" selected>Medium (325 mines)</option>
-                    <option value="450">Hard (450 mines)</option>
-                    <option value="500">Expert (500 mines)</option>
-                    <option value="random">Revengeance (650-800 mines)</option>
+                    <option value="easy">Easy (200 mines)</option>
+                    <option value="medium" selected>Medium (325 mines)</option>
+                    <option value="hard">Hard (450 mines)</option>
+                    <option value="expert">Expert (500 mines)</option>
+                    <option value="revengeance">Revengeance (650-800 mines)</option>
+                    <option value="custom">Custom</option>
                 </select>
                 <button class="btn" id="bombBtn">Bomb (5x5)</button>
                 <button class="btn" id="hintBtn">Hint</button>
@@ -227,13 +252,7 @@
                 <button class="btn" id="buyFlagBtn">Buy Flag (100)</button>
                 <button class="btn" id="miniGameBtn">Mini Game</button>
                 <button class="btn" id="powersToggleBtn">Powers: On</button>
-                <span style="display:inline-flex;gap:6px;align-items:center;">
-                    <label for="rowsInput">Rows:</label>
-                    <input id="rowsInput" type="number" min="5" max="80" value="40" style="width:64px;padding:6px;">
-                    <label for="colsInput">Cols:</label>
-                    <input id="colsInput" type="number" min="5" max="80" value="40" style="width:64px;padding:6px;">
-                    <button class="btn" id="applySizeBtn">Apply Size</button>
-                </span>
+                <button class="btn" id="sizeEditorBtn">Size Editor</button>
             </div>
             <div class="timer" id="timer">000</div>
         </div>
@@ -302,6 +321,36 @@
         </div>
     </div>
 
+    <!-- Size Editor Modal -->
+    <div class="modal-overlay" id="sizeEditorModal">
+        <div class="modal">
+            <h3>Board Size Editor</h3>
+            <p style="margin-bottom:12px;">Adjust rows, columns, and mine density to scale the board.</p>
+            <div class="size-editor-group">
+                <label for="rowsSlider">Rows</label>
+                <input id="rowsSlider" type="range" min="5" max="100" value="40">
+                <input id="rowsInput" type="number" min="5" max="100" value="40">
+            </div>
+            <div class="size-editor-group">
+                <label for="colsSlider">Columns</label>
+                <input id="colsSlider" type="range" min="5" max="100" value="40">
+                <input id="colsInput" type="number" min="5" max="100" value="40">
+            </div>
+            <div class="size-editor-group">
+                <label for="densityInput">Mine Density</label>
+                <input id="densityInput" type="range" min="5" max="50" value="20">
+                <span id="densityDisplay">20%</span>
+            </div>
+            <div class="size-editor-summary" id="sizeEditorSummary">
+                40 × 40 • 1,600 cells • 325 mines • 5 bombs
+            </div>
+            <div style="display:flex;gap:10px;justify-content:center;margin-top:14px;">
+                <button class="btn" id="sizeApplyBtn">Apply</button>
+                <button class="btn" id="sizeCancelBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         class Minesweeper {
             constructor(rows = 16, cols = 16, mines = 40) {
@@ -317,7 +366,7 @@
                 this.timerInterval = null;
                 this.holdTimer = null;
                 this.holdThreshold = 500; // milliseconds to hold for flag
-                this.bombsUsed = 0; // Track number of bombs used (max 5)
+                this.bombsUsed = 0; // Track number of bombs used (will scale with board size)
                 this.mineRevealed = false; // Track if mine has been revealed
                 this.bombTargeting = false; // Track if bomb targeting mode is active
                 this.mineDetectorActive = false; // Track if mine detector is active
@@ -326,12 +375,42 @@
                 this.totalScore = Number(localStorage.getItem('ms_totalScore') || '0');
                 this.lostMineRow = null; // Track which mine caused the loss
                 this.lostMineCol = null;
-                this.availableFlags = this.mines; // Start with flags equal to mine count
                 this.powersDisabledMode = false; // Powers disabled => double points
+
+                this.baseArea = 40 * 40;
+                this.difficultyProfiles = {
+                    easy: { label: 'Easy', density: 200 / this.baseArea },
+                    medium: { label: 'Medium', density: 325 / this.baseArea },
+                    hard: { label: 'Hard', density: 450 / this.baseArea },
+                    expert: { label: 'Expert', density: 500 / this.baseArea },
+                    revengeance: { label: 'Revengeance', densityRange: [650 / this.baseArea, 800 / this.baseArea] }
+                };
+
+                const difficultySelect = document.getElementById('difficultySelect');
+                const initialDifficulty = difficultySelect ? difficultySelect.value : 'medium';
+                this.difficultyKey = this.difficultyProfiles[initialDifficulty] ? initialDifficulty : 'custom';
+                this.mineDensityRange = null;
+                const fallbackDensity = (this.rows && this.cols) ? (this.mines / (this.rows * this.cols)) : 0.2;
+                if (this.difficultyKey === 'custom') {
+                    this.mineDensity = fallbackDensity;
+                } else {
+                    const profile = this.difficultyProfiles[this.difficultyKey];
+                    if (profile?.densityRange) {
+                        this.mineDensityRange = profile.densityRange;
+                        this.mineDensity = profile.densityRange[0];
+                    } else {
+                        this.mineDensity = profile?.density ?? fallbackDensity;
+                    }
+                }
+                this.mineDensity = this.resolveMineDensity();
+                this.mines = Math.max(1, Math.round(this.mineDensity * this.rows * this.cols));
+                this.availableFlags = this.mines;
+                this.maxBombs = this.calculateMaxBombs();
                 
                 this.initializeBoard();
                 this.setupEventListeners();
                 this.render();
+                this.syncSizeEditorDefaults();
 
                 // Mobile copy/select/callout prevention
                 if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
@@ -395,7 +474,16 @@
                 document.getElementById('buyFlagBtn').addEventListener('click', () => this.buyFlagFunction());
                 document.getElementById('miniGameBtn').addEventListener('click', () => this.openMiniGame());
                 document.getElementById('powersToggleBtn').addEventListener('click', () => this.togglePowers());
-                document.getElementById('applySizeBtn').addEventListener('click', () => this.applyNewSize());
+                document.getElementById('sizeEditorBtn').addEventListener('click', () => this.openSizeEditor());
+                document.getElementById('sizeApplyBtn').addEventListener('click', () => this.applySizeEditor());
+                document.getElementById('sizeCancelBtn').addEventListener('click', () => this.closeSizeEditor());
+                const sizeInputs = ['rowsSlider','colsSlider','rowsInput','colsInput','densityInput'];
+                sizeInputs.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    el.addEventListener('input', () => this.handleSizeEditorInput(id));
+                    el.addEventListener('change', () => this.handleSizeEditorInput(id));
+                });
             }
 
             render() {
@@ -477,6 +565,8 @@
                 this.updateScore();
                 this.updateTotalScore();
                 this.updateGameStatus();
+                this.updateBombUi();
+                this.refreshPowerButtons();
             }
 
             handleMouseDown(e, row, col) {
@@ -610,38 +700,37 @@
 
             changeDifficulty() {
                 const selectedValue = document.getElementById('difficultySelect').value;
-                let selectedMines;
-                
-                if (selectedValue === 'random') {
-                    // Revengeance mode: random between 650-800 mines
-                    selectedMines = Math.floor(Math.random() * (800 - 650 + 1)) + 650;
-                } else {
-                    selectedMines = parseInt(selectedValue);
+                if (selectedValue === 'custom') {
+                    this.difficultyKey = 'custom';
+                    this.mineDensityRange = null;
+                    this.syncSizeEditorDefaults();
+                    return;
                 }
-                
-                this.mines = selectedMines;
-                this.availableFlags = selectedMines;
+                const profile = this.difficultyProfiles[selectedValue];
+                if (!profile) {
+                    return;
+                }
+                this.difficultyKey = selectedValue;
+                this.mineDensityRange = profile.densityRange || null;
+                if (profile.density != null) {
+                    this.mineDensity = profile.density;
+                }
                 this.newGame();
             }
 
             bombFunction() {
-                if (this.gameOver || this.gameWon || this.bombsUsed >= 5) return;
-                
-                if (this.bombTargeting) {
-                    // Cancel bomb targeting mode
-                    this.bombTargeting = false;
-                    document.getElementById('bombBtn').textContent = `Bomb (5x5) - ${5 - this.bombsUsed}`;
-                    document.getElementById('bombBtn').style.backgroundColor = '#c0c0c0';
-                } else {
-                    // Enter bomb targeting mode
-                    this.bombTargeting = true;
-                    document.getElementById('bombBtn').textContent = 'Click to Drop Bomb';
-                    document.getElementById('bombBtn').style.backgroundColor = '#ff6b6b';
+                if (this.gameOver || this.gameWon) return;
+                if (this.maxBombs === 0 || this.bombsUsed >= this.maxBombs) {
+                    this.updateBombUi();
+                    return;
                 }
+                
+                this.bombTargeting = !this.bombTargeting;
+                this.updateBombUi();
             }
 
             dropBomb(centerRow, centerCol) {
-                if (this.gameOver || this.gameWon || this.bombsUsed >= 5 || !this.bombTargeting) return;
+                if (this.gameOver || this.gameWon || this.maxBombs === 0 || this.bombsUsed >= this.maxBombs || !this.bombTargeting) return;
                 
                 // Reveal 5x5 area around the center
                 for (let row = Math.max(0, centerRow - 2); row <= Math.min(this.rows - 1, centerRow + 2); row++) {
@@ -662,13 +751,9 @@
                 // Increment bomb usage and exit targeting mode
                 this.bombsUsed++;
                 this.bombTargeting = false;
-                if (this.bombsUsed >= 5) {
-                    document.getElementById('bombBtn').disabled = true;
-                }
-                document.getElementById('bombBtn').textContent = `Bomb (5x5) - ${5 - this.bombsUsed}`;
-                document.getElementById('bombBtn').style.backgroundColor = '#c0c0c0';
                 
                 this.checkWinCondition();
+                this.updateBombUi();
                 this.render();
             }
 
@@ -959,7 +1044,9 @@
 
             newGame() {
                 this.stopTimer();
-                this.initializeBoard();
+                this.mineDensity = this.resolveMineDensity();
+                this.mines = Math.max(1, Math.round(this.mineDensity * this.rows * this.cols));
+                this.availableFlags = this.mines;
                 this.gameOver = false;
                 this.gameWon = false;
                 this.startTime = null;
@@ -970,30 +1057,188 @@
                 this.hintsUsed = 0;
                 this.lostMineRow = null;
                 this.lostMineCol = null;
-                this.availableFlags = this.mines;
-                document.getElementById('bombBtn').disabled = false;
-                document.getElementById('mineDetectorBtn').textContent = 'Mine Detector (300)';
-                document.getElementById('mineDetectorBtn').style.backgroundColor = '#c0c0c0';
-                document.getElementById('bombBtn').textContent = 'Bomb (5x5) - 5';
-                document.getElementById('bombBtn').style.backgroundColor = '#c0c0c0';
-                document.getElementById('hintBtn').disabled = false;
-                document.getElementById('revealMineBtn').disabled = false;
+                this.maxBombs = this.calculateMaxBombs();
+                this.initializeBoard();
+                const detectorBtn = document.getElementById('mineDetectorBtn');
+                if (detectorBtn) {
+                    detectorBtn.textContent = 'Mine Detector (300)';
+                    detectorBtn.style.backgroundColor = '#c0c0c0';
+                    detectorBtn.disabled = this.powersDisabledMode;
+                }
+                this.refreshPowerButtons();
                 this.score = 0;
                 this.render();
+                this.syncSizeEditorDefaults();
             }
 
             // ===== Board size controls =====
-            applyNewSize() {
+            openSizeEditor() {
+                const overlay = document.getElementById('sizeEditorModal');
+                if (!overlay) return;
+                this.syncSizeEditorDefaults();
+                overlay.style.display = 'flex';
+            }
+
+            closeSizeEditor() {
+                const overlay = document.getElementById('sizeEditorModal');
+                if (overlay) {
+                    overlay.style.display = 'none';
+                }
+            }
+
+            handleSizeEditorInput(sourceId) {
+                const rowsSlider = document.getElementById('rowsSlider');
+                const colsSlider = document.getElementById('colsSlider');
                 const rowsInput = document.getElementById('rowsInput');
                 const colsInput = document.getElementById('colsInput');
-                const newRows = Math.max(5, Math.min(80, parseInt(rowsInput.value)));
-                const newCols = Math.max(5, Math.min(80, parseInt(colsInput.value)));
-                const currentDensity = this.mines / (this.rows * this.cols); // mines per tile
-                this.rows = newRows;
-                this.cols = newCols;
-                this.mines = Math.max(1, Math.round(currentDensity * newRows * newCols));
-                this.availableFlags = this.mines;
+                const densityInput = document.getElementById('densityInput');
+                const densityDisplay = document.getElementById('densityDisplay');
+                if (!rowsSlider || !colsSlider || !rowsInput || !colsInput || !densityInput) return;
+
+                if (sourceId === 'rowsSlider') {
+                    rowsInput.value = rowsSlider.value;
+                } else if (sourceId === 'rowsInput') {
+                    const value = this.clampNumber(rowsInput.value, 5, 100);
+                    rowsInput.value = value;
+                    rowsSlider.value = value;
+                }
+
+                if (sourceId === 'colsSlider') {
+                    colsInput.value = colsSlider.value;
+                } else if (sourceId === 'colsInput') {
+                    const value = this.clampNumber(colsInput.value, 5, 100);
+                    colsInput.value = value;
+                    colsSlider.value = value;
+                }
+
+                if (sourceId === 'densityInput' && densityDisplay) {
+                    densityDisplay.textContent = `${densityInput.value}%`;
+                }
+
+                this.updateSizeEditorSummary();
+            }
+
+            updateSizeEditorSummary() {
+                const rows = this.clampNumber(document.getElementById('rowsInput')?.value ?? this.rows, 5, 100);
+                const cols = this.clampNumber(document.getElementById('colsInput')?.value ?? this.cols, 5, 100);
+                const densitySlider = document.getElementById('densityInput');
+                const summary = document.getElementById('sizeEditorSummary');
+                if (!densitySlider || !summary) return;
+                const densityPercent = this.clampNumber(densitySlider.value, 5, 50);
+                const area = rows * cols;
+                const mines = Math.max(1, Math.round((densityPercent / 100) * area));
+                const bombs = this.calculateMaxBombsForDimensions(rows, cols);
+                const bombLabel = bombs === 0 ? 'Bombs off' : `${bombs} bombs`;
+                summary.textContent = `${rows} × ${cols} • ${area.toLocaleString()} cells • ${mines.toLocaleString()} mines • ${bombLabel}`;
+            }
+
+            applySizeEditor() {
+                const rowsValue = this.clampNumber(document.getElementById('rowsInput')?.value ?? this.rows, 5, 100);
+                const colsValue = this.clampNumber(document.getElementById('colsInput')?.value ?? this.cols, 5, 100);
+                const densitySlider = document.getElementById('densityInput');
+                if (!densitySlider) return;
+                const densityPercent = this.clampNumber(densitySlider.value, 5, 50);
+                this.rows = rowsValue;
+                this.cols = colsValue;
+                this.mineDensity = densityPercent / 100;
+                this.difficultyKey = 'custom';
+                this.mineDensityRange = null;
+                const difficultySelect = document.getElementById('difficultySelect');
+                if (difficultySelect) {
+                    difficultySelect.value = 'custom';
+                }
+                this.closeSizeEditor();
                 this.newGame();
+            }
+
+            syncSizeEditorDefaults() {
+                const rowsSlider = document.getElementById('rowsSlider');
+                const colsSlider = document.getElementById('colsSlider');
+                const rowsInput = document.getElementById('rowsInput');
+                const colsInput = document.getElementById('colsInput');
+                const densityInput = document.getElementById('densityInput');
+                const densityDisplay = document.getElementById('densityDisplay');
+                if (rowsSlider) rowsSlider.value = String(this.rows);
+                if (colsSlider) colsSlider.value = String(this.cols);
+                if (rowsInput) rowsInput.value = String(this.rows);
+                if (colsInput) colsInput.value = String(this.cols);
+                if (densityInput) {
+                    const percent = Math.round(this.mineDensity * 100);
+                    const clamped = this.clampNumber(percent, 5, 50);
+                    densityInput.value = String(clamped);
+                    if (densityDisplay) densityDisplay.textContent = `${clamped}%`;
+                }
+                this.updateSizeEditorSummary();
+            }
+
+            clampNumber(value, min, max) {
+                const num = Math.round(Number(value));
+                if (Number.isNaN(num)) return min;
+                return Math.max(min, Math.min(max, num));
+            }
+
+            calculateMaxBombsForDimensions(rows, cols) {
+                const minDimension = Math.min(rows, cols);
+                if (minDimension < 15) return 0;
+                const area = rows * cols;
+                const scaled = Math.round((area / this.baseArea) * 5);
+                return Math.max(1, Math.min(12, scaled));
+            }
+
+            calculateMaxBombs() {
+                return this.calculateMaxBombsForDimensions(this.rows, this.cols);
+            }
+
+            updateBombUi() {
+                const bombBtn = document.getElementById('bombBtn');
+                if (!bombBtn) return;
+                if (this.bombTargeting) {
+                    bombBtn.disabled = false;
+                    bombBtn.textContent = 'Click to Drop Bomb';
+                    bombBtn.style.backgroundColor = '#ff6b6b';
+                    return;
+                }
+                const noBombs = this.maxBombs === 0;
+                const finished = this.bombsUsed >= this.maxBombs;
+                const disabled = this.gameOver || this.gameWon || noBombs;
+                bombBtn.disabled = disabled || finished;
+                if (disabled) {
+                    bombBtn.textContent = 'Bomb (5x5) - Disabled';
+                } else {
+                    const remaining = Math.max(0, this.maxBombs - this.bombsUsed);
+                    bombBtn.textContent = `Bomb (5x5) - ${remaining}`;
+                }
+                bombBtn.style.backgroundColor = '#c0c0c0';
+            }
+
+            refreshPowerButtons() {
+                const disable = this.powersDisabledMode;
+                const hintBtn = document.getElementById('hintBtn');
+                const revealMineBtn = document.getElementById('revealMineBtn');
+                const mineDetectorBtn = document.getElementById('mineDetectorBtn');
+                const buyFlagBtn = document.getElementById('buyFlagBtn');
+                if (hintBtn) hintBtn.disabled = disable || this.hintsUsed >= 5 || this.gameOver || this.gameWon;
+                if (revealMineBtn) revealMineBtn.disabled = disable || this.gameOver || this.gameWon;
+                if (mineDetectorBtn) mineDetectorBtn.disabled = disable || this.gameOver || this.gameWon;
+                if (buyFlagBtn) buyFlagBtn.disabled = disable || this.gameOver || this.gameWon;
+            }
+
+            resolveMineDensity() {
+                if (this.difficultyKey === 'custom') {
+                    return Math.max(0.05, Math.min(0.5, this.mineDensity));
+                }
+                const profile = this.difficultyProfiles[this.difficultyKey];
+                if (!profile) {
+                    return Math.max(0.05, Math.min(0.5, this.mineDensity));
+                }
+                if (profile.densityRange) {
+                    this.mineDensityRange = profile.densityRange;
+                    const [min, max] = profile.densityRange;
+                    const density = min + Math.random() * (max - min);
+                    return Math.max(0.05, Math.min(0.5, density));
+                }
+                this.mineDensityRange = null;
+                return Math.max(0.05, Math.min(0.5, profile.density));
             }
 
             // ===== Powers Disabled Mode =====
@@ -1001,12 +1246,7 @@
                 this.powersDisabledMode = !this.powersDisabledMode;
                 const btn = document.getElementById('powersToggleBtn');
                 btn.textContent = this.powersDisabledMode ? 'Powers: Off' : 'Powers: On';
-                // Reflect disabled state in UI (except bombs)
-                const disable = this.powersDisabledMode;
-                document.getElementById('hintBtn').disabled = disable || this.hintsUsed >= 5;
-                document.getElementById('revealMineBtn').disabled = disable;
-                document.getElementById('mineDetectorBtn').disabled = disable;
-                document.getElementById('buyFlagBtn').disabled = disable;
+                this.refreshPowerButtons();
             }
 
             // ===== Simple Mini Game =====
