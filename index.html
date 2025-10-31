@@ -238,11 +238,11 @@
             <div class="controls">
                 <button class="btn" id="newGameBtn">New Game</button>
                 <select class="btn" id="difficultySelect" style="padding: 8px 12px;">
-                    <option value="easy">Easy (200 mines)</option>
-                    <option value="medium" selected>Medium (325 mines)</option>
-                    <option value="hard">Hard (450 mines)</option>
-                    <option value="expert">Expert (500 mines)</option>
-                    <option value="revengeance">Revengeance (650-800 mines)</option>
+                    <option value="easy">Easy (12.5%)</option>
+                    <option value="medium" selected>Medium (20.3%)</option>
+                    <option value="hard">Hard (28.1%)</option>
+                    <option value="expert">Expert (31.3%)</option>
+                    <option value="revengeance">Revengeance (40.6%-50%)</option>
                     <option value="custom">Custom</option>
                 </select>
                 <button class="btn" id="bombBtn">Bomb (5x5)</button>
@@ -338,7 +338,7 @@
             </div>
             <div class="size-editor-group">
                 <label for="densityInput">Mine Density</label>
-                <input id="densityInput" type="range" min="5" max="50" value="20">
+                <input id="densityInput" type="range" min="5" max="50" step="0.1" value="20">
                 <span id="densityDisplay">20%</span>
             </div>
             <div class="size-editor-summary" id="sizeEditorSummary">
@@ -394,6 +394,7 @@
                     expert: { label: 'Expert', density: 500 / this.baseArea },
                     revengeance: { label: 'Revengeance', densityRange: [650 / this.baseArea, 800 / this.baseArea] }
                 };
+                this.updateDifficultyOptionLabels();
 
                 const difficultySelect = document.getElementById('difficultySelect');
                 const initialDifficulty = difficultySelect ? difficultySelect.value : 'medium';
@@ -1121,11 +1122,11 @@
                 }
 
                 if (sourceId === 'densityInput' && densityDisplay) {
-                    if (densityInput.disabled) {
-                        densityDisplay.textContent = `${densityInput.value}% (preset)`;
-                    } else {
-                        densityDisplay.textContent = `${densityInput.value}%`;
-                    }
+                    const percent = this.clampNumber(densityInput.value, 5, 50, false);
+                    const rounded = Math.round(percent * 10) / 10;
+                    densityInput.value = String(rounded);
+                    const formatted = this.formatPercent(rounded, 1);
+                    densityDisplay.textContent = densityInput.disabled ? `${formatted}% (preset)` : `${formatted}%`;
                 }
 
                 this.updateSizeEditorSummary();
@@ -1137,14 +1138,15 @@
                 const densitySlider = document.getElementById('densityInput');
                 const summary = document.getElementById('sizeEditorSummary');
                 if (!densitySlider || !summary) return;
-                const densityPercent = this.clampNumber(densitySlider.value, 5, 50);
+                const densityPercent = this.clampNumber(densitySlider.value, 5, 50, false);
+                const densityLabel = this.formatPercent(densityPercent, 1);
                 const area = rows * cols;
                 const mines = Math.max(1, Math.round((densityPercent / 100) * area));
                 const bombs = this.calculateMaxBombsForDimensions(rows, cols);
                 const bombLabel = bombs === 0 ? 'Bombs off' : `${bombs} bombs`;
                 const hints = this.calculateMaxHintsForDimensions(rows, cols);
                 const hintLabel = hints === 0 ? 'Hints off' : `${hints} hints`;
-                summary.textContent = `${rows} × ${cols} • ${area.toLocaleString()} cells • ${mines.toLocaleString()} mines • ${bombLabel} • ${hintLabel}`;
+                summary.textContent = `${rows} × ${cols} • ${area.toLocaleString()} cells • ${densityLabel}% density • ${mines.toLocaleString()} mines • ${bombLabel} • ${hintLabel}`;
             }
 
             applySizeEditor() {
@@ -1152,7 +1154,7 @@
                 const colsValue = this.clampNumber(document.getElementById('colsInput')?.value ?? this.cols, 5, 100);
                 const densitySlider = document.getElementById('densityInput');
                 if (!densitySlider) return;
-                const densityPercent = this.clampNumber(densitySlider.value, 5, 50);
+                const densityPercent = this.clampNumber(densitySlider.value, 5, 50, false);
                 this.rows = rowsValue;
                 this.cols = colsValue;
                 if (this.difficultyKey === 'custom') {
@@ -1175,22 +1177,54 @@
                 if (rowsInput) rowsInput.value = String(this.rows);
                 if (colsInput) colsInput.value = String(this.cols);
                 if (densityInput) {
-                    const percent = Math.round(this.mineDensity * 100);
-                    const clamped = this.clampNumber(percent, 5, 50);
-                    densityInput.value = String(clamped);
+                    const percent = this.mineDensity * 100;
+                    const clamped = this.clampNumber(percent, 5, 50, false);
+                    const rounded = Math.round(clamped * 10) / 10;
+                    densityInput.value = String(rounded);
                     const isCustom = this.difficultyKey === 'custom';
                     densityInput.disabled = !isCustom;
                     if (densityDisplay) {
-                        densityDisplay.textContent = isCustom ? `${clamped}%` : `${clamped}% (preset)`;
+                        const formatted = this.formatPercent(rounded, 1);
+                        densityDisplay.textContent = isCustom ? `${formatted}%` : `${formatted}% (preset)`;
                     }
                 }
                 this.updateSizeEditorSummary();
             }
 
-            clampNumber(value, min, max) {
-                const num = Math.round(Number(value));
+            clampNumber(value, min, max, round = true) {
+                const num = Number(value);
                 if (Number.isNaN(num)) return min;
-                return Math.max(min, Math.min(max, num));
+                const bounded = Math.max(min, Math.min(max, num));
+                return round ? Math.round(bounded) : bounded;
+            }
+
+            formatPercent(value, decimals = 1) {
+                const factor = Math.pow(10, decimals);
+                const rounded = Math.round(value * factor) / factor;
+                const text = rounded.toFixed(decimals).replace(/\.?0+$/, '');
+                return text;
+            }
+
+            updateDifficultyOptionLabels() {
+                const select = document.getElementById('difficultySelect');
+                if (!select) return;
+                Array.from(select.options).forEach(option => {
+                    if (option.value === 'custom') {
+                        option.textContent = 'Custom';
+                        return;
+                    }
+                    const profile = this.difficultyProfiles[option.value];
+                    if (!profile) return;
+                    if (profile.densityRange) {
+                        const [min, max] = profile.densityRange;
+                        const minLabel = this.formatPercent(min * 100, 1);
+                        const maxLabel = this.formatPercent(max * 100, 1);
+                        option.textContent = `${profile.label} (${minLabel}%-${maxLabel}%)`;
+                    } else if (profile.density != null) {
+                        const percentLabel = this.formatPercent(profile.density * 100, 1);
+                        option.textContent = `${profile.label} (${percentLabel}%)`;
+                    }
+                });
             }
 
             calculateMaxBombsForDimensions(rows, cols) {
@@ -1789,6 +1823,7 @@
                     } else if (mode === 'coin') {
                         if (!coinWrap || !coinStatus || !headsBtn || !tailsBtn) return;
                         coinWrap.style.display = 'flex';
+                        coinStatus.textContent = 'Pick Heads or Tails';
                         let round = 0;
                         let correct = 0;
                         const play = (guess) => {
