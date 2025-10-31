@@ -376,8 +376,17 @@
                 this.lostMineRow = null; // Track which mine caused the loss
                 this.lostMineCol = null;
                 this.powersDisabledMode = false; // Powers disabled => double points
-
                 this.baseArea = 40 * 40;
+                this.baseHintCount = 5;
+                this.baseCosts = {
+                    mineDetector: 300,
+                    buyFlag: 100,
+                    revealMine: 500
+                };
+                this.priceMultiplier = 1;
+                this.mineDetectorCost = this.baseCosts.mineDetector;
+                this.buyFlagCost = this.baseCosts.buyFlag;
+                this.revealMineCost = this.baseCosts.revealMine;
                 this.difficultyProfiles = {
                     easy: { label: 'Easy', density: 200 / this.baseArea },
                     medium: { label: 'Medium', density: 325 / this.baseArea },
@@ -406,11 +415,15 @@
                 this.mines = Math.max(1, Math.round(this.mineDensity * this.rows * this.cols));
                 this.availableFlags = this.mines;
                 this.maxBombs = this.calculateMaxBombs();
-                
+                this.maxHints = this.calculateMaxHints();
+                this.updateCostsForDimensions(this.rows, this.cols);
+
                 this.initializeBoard();
                 this.setupEventListeners();
                 this.render();
                 this.syncSizeEditorDefaults();
+                this.updateCostLabels();
+                this.updateHintButton();
 
                 // Mobile copy/select/callout prevention
                 if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
@@ -567,6 +580,7 @@
                 this.updateGameStatus();
                 this.updateBombUi();
                 this.refreshPowerButtons();
+                this.updateCostLabels();
             }
 
             handleMouseDown(e, row, col) {
@@ -758,8 +772,9 @@
             }
 
             hintFunction() {
-                if (this.gameOver || this.gameWon || this.hintsUsed >= 5) return;
+                if (this.gameOver || this.gameWon) return;
                 if (this.powersDisabledMode) return;
+                if (this.maxHints === 0 || this.hintsUsed >= this.maxHints) return;
                 
                 // Find a revealed cell with a number that has unrevealed adjacent cells
                 const hintCandidates = [];
@@ -821,9 +836,7 @@
                 
                 // Increment hint usage
                 this.hintsUsed++;
-                if (this.hintsUsed >= 5) {
-                    document.getElementById('hintBtn').disabled = true;
-                }
+                this.updateHintButton();
                 
                 this.checkWinCondition();
                 this.render();
@@ -832,17 +845,17 @@
             mineDetectorFunction() {
                 if (this.gameOver || this.gameWon) return;
                 if (this.powersDisabledMode) return;
-                
+                const btn = document.getElementById('mineDetectorBtn');
+                if (!btn) return;
                 if (this.mineDetectorActive) {
                     // Cancel mine detector mode
                     this.mineDetectorActive = false;
-                    document.getElementById('mineDetectorBtn').textContent = 'Mine Detector (300)';
-                    document.getElementById('mineDetectorBtn').style.backgroundColor = '#c0c0c0';
+                    this.setMineDetectorIdleLabel();
                 } else {
                     // Enter mine detector mode
                     this.mineDetectorActive = true;
-                    document.getElementById('mineDetectorBtn').textContent = 'Click to Detect';
-                    document.getElementById('mineDetectorBtn').style.backgroundColor = '#4CAF50';
+                    btn.textContent = 'Click to Detect';
+                    btn.style.backgroundColor = '#4CAF50';
                 }
             }
 
@@ -850,11 +863,11 @@
                 if (this.gameOver || this.gameWon || !this.mineDetectorActive) return;
                 
                 // Check if player has enough points
-                if (this.totalScore < 300) {
+                const cost = this.mineDetectorCost;
+                if (this.totalScore < cost) {
                     // Not enough points, cancel detector mode
                     this.mineDetectorActive = false;
-                    document.getElementById('mineDetectorBtn').textContent = 'Mine Detector (300)';
-                    document.getElementById('mineDetectorBtn').style.backgroundColor = '#c0c0c0';
+                    this.setMineDetectorIdleLabel();
                     return;
                 }
                 
@@ -863,8 +876,8 @@
                     return;
                 }
                 
-                // Deduct 300 points
-                this.totalScore -= 300;
+                // Deduct points
+                this.totalScore -= cost;
                 localStorage.setItem('ms_totalScore', String(this.totalScore));
                 this.updateTotalScore();
                 
@@ -881,8 +894,7 @@
                 
                 // Exit detector mode after use
                 this.mineDetectorActive = false;
-                document.getElementById('mineDetectorBtn').textContent = 'Mine Detector (300)';
-                document.getElementById('mineDetectorBtn').style.backgroundColor = '#c0c0c0';
+                this.setMineDetectorIdleLabel();
                 
                 this.checkWinCondition();
                 this.render();
@@ -922,8 +934,9 @@
                 this.flagged[randomMine.row][randomMine.col] = true;
                 this.availableFlags--;
                 
-                // Deduct 500 points from total score
-                this.totalScore = Math.max(0, this.totalScore - 500);
+                // Deduct points from total score
+                const cost = this.revealMineCost;
+                this.totalScore = Math.max(0, this.totalScore - cost);
                 localStorage.setItem('ms_totalScore', String(this.totalScore));
                 this.updateTotalScore();
                 
@@ -936,8 +949,9 @@
                 if (this.powersDisabledMode) return;
                 
                 // Check if player has enough points
-                if (this.totalScore >= 100) {
-                    this.totalScore -= 100;
+                const cost = this.buyFlagCost;
+                if (this.totalScore >= cost) {
+                    this.totalScore -= cost;
                     this.availableFlags++;
                     localStorage.setItem('ms_totalScore', String(this.totalScore));
                     this.updateTotalScore();
@@ -980,17 +994,11 @@
             }
 
             updateMineCounter() {
-                const flaggedCount = this.flagged.flat().filter(flag => flag).length;
-                const remainingMines = this.mines - flaggedCount;
-                document.getElementById('mineCounter').textContent = 
-                    remainingMines.toString().padStart(3, '0');
-                
-                // Update buy flag button text to show available flags
-                document.getElementById('buyFlagBtn').textContent = `Buy Flag (100) - ${this.availableFlags}`;
-                
-                // Update the corner display to show total flags available
-                document.getElementById('mineCounter').textContent = 
-                    this.availableFlags.toString().padStart(3, '0');
+                const mineCounter = document.getElementById('mineCounter');
+                if (mineCounter) {
+                    mineCounter.textContent = this.availableFlags.toString().padStart(3, '0');
+                }
+                this.setBuyFlagLabel();
             }
 
             updateScore() {
@@ -1058,13 +1066,14 @@
                 this.lostMineRow = null;
                 this.lostMineCol = null;
                 this.maxBombs = this.calculateMaxBombs();
+                this.maxHints = this.calculateMaxHints();
+                this.updateCostsForDimensions(this.rows, this.cols);
                 this.initializeBoard();
                 const detectorBtn = document.getElementById('mineDetectorBtn');
                 if (detectorBtn) {
-                    detectorBtn.textContent = 'Mine Detector (300)';
-                    detectorBtn.style.backgroundColor = '#c0c0c0';
                     detectorBtn.disabled = this.powersDisabledMode;
                 }
+                this.setMineDetectorIdleLabel();
                 this.refreshPowerButtons();
                 this.score = 0;
                 this.render();
@@ -1112,7 +1121,11 @@
                 }
 
                 if (sourceId === 'densityInput' && densityDisplay) {
-                    densityDisplay.textContent = `${densityInput.value}%`;
+                    if (densityInput.disabled) {
+                        densityDisplay.textContent = `${densityInput.value}% (preset)`;
+                    } else {
+                        densityDisplay.textContent = `${densityInput.value}%`;
+                    }
                 }
 
                 this.updateSizeEditorSummary();
@@ -1129,7 +1142,9 @@
                 const mines = Math.max(1, Math.round((densityPercent / 100) * area));
                 const bombs = this.calculateMaxBombsForDimensions(rows, cols);
                 const bombLabel = bombs === 0 ? 'Bombs off' : `${bombs} bombs`;
-                summary.textContent = `${rows} × ${cols} • ${area.toLocaleString()} cells • ${mines.toLocaleString()} mines • ${bombLabel}`;
+                const hints = this.calculateMaxHintsForDimensions(rows, cols);
+                const hintLabel = hints === 0 ? 'Hints off' : `${hints} hints`;
+                summary.textContent = `${rows} × ${cols} • ${area.toLocaleString()} cells • ${mines.toLocaleString()} mines • ${bombLabel} • ${hintLabel}`;
             }
 
             applySizeEditor() {
@@ -1140,12 +1155,9 @@
                 const densityPercent = this.clampNumber(densitySlider.value, 5, 50);
                 this.rows = rowsValue;
                 this.cols = colsValue;
-                this.mineDensity = densityPercent / 100;
-                this.difficultyKey = 'custom';
-                this.mineDensityRange = null;
-                const difficultySelect = document.getElementById('difficultySelect');
-                if (difficultySelect) {
-                    difficultySelect.value = 'custom';
+                if (this.difficultyKey === 'custom') {
+                    this.mineDensity = densityPercent / 100;
+                    this.mineDensityRange = null;
                 }
                 this.closeSizeEditor();
                 this.newGame();
@@ -1166,7 +1178,11 @@
                     const percent = Math.round(this.mineDensity * 100);
                     const clamped = this.clampNumber(percent, 5, 50);
                     densityInput.value = String(clamped);
-                    if (densityDisplay) densityDisplay.textContent = `${clamped}%`;
+                    const isCustom = this.difficultyKey === 'custom';
+                    densityInput.disabled = !isCustom;
+                    if (densityDisplay) {
+                        densityDisplay.textContent = isCustom ? `${clamped}%` : `${clamped}% (preset)`;
+                    }
                 }
                 this.updateSizeEditorSummary();
             }
@@ -1187,6 +1203,90 @@
 
             calculateMaxBombs() {
                 return this.calculateMaxBombsForDimensions(this.rows, this.cols);
+            }
+
+            calculateMaxHintsForDimensions(rows, cols) {
+                const minDimension = Math.min(rows, cols);
+                if (minDimension <= 15) return 0;
+                const area = rows * cols;
+                const ratio = area / this.baseArea;
+                const scaled = Math.round(this.baseHintCount * ratio);
+                return Math.max(1, Math.min(15, scaled));
+            }
+
+            calculateMaxHints() {
+                return this.calculateMaxHintsForDimensions(this.rows, this.cols);
+            }
+
+            calculatePriceMultiplierForDimensions(rows, cols) {
+                const area = rows * cols;
+                if (area <= 0) return 1;
+                const multiplier = this.baseArea / area;
+                return Math.max(0.5, Math.min(2, multiplier));
+            }
+
+            adjustCost(baseCost, multiplier) {
+                const raw = baseCost * multiplier;
+                return Math.max(10, Math.round(raw / 10) * 10);
+            }
+
+            updateCostsForDimensions(rows, cols) {
+                const multiplier = this.calculatePriceMultiplierForDimensions(rows, cols);
+                this.priceMultiplier = multiplier;
+                this.mineDetectorCost = this.adjustCost(this.baseCosts.mineDetector, multiplier);
+                this.buyFlagCost = this.adjustCost(this.baseCosts.buyFlag, multiplier);
+                this.revealMineCost = this.adjustCost(this.baseCosts.revealMine, multiplier);
+            }
+
+            getMineDetectorLabel() {
+                return `Mine Detector (${this.mineDetectorCost})`;
+            }
+
+            setMineDetectorIdleLabel() {
+                const btn = document.getElementById('mineDetectorBtn');
+                if (!btn || this.mineDetectorActive) return;
+                btn.textContent = this.getMineDetectorLabel();
+                btn.style.backgroundColor = '#c0c0c0';
+            }
+
+            getBuyFlagLabel() {
+                return `Buy Flag (${this.buyFlagCost})`;
+            }
+
+            setBuyFlagLabel() {
+                const btn = document.getElementById('buyFlagBtn');
+                if (!btn) return;
+                const flags = Math.max(0, this.availableFlags);
+                btn.textContent = `${this.getBuyFlagLabel()} - ${flags}`;
+            }
+
+            getRevealMineLabel() {
+                return `Reveal Mine (-${this.revealMineCost})`;
+            }
+
+            setRevealMineLabel() {
+                const btn = document.getElementById('revealMineBtn');
+                if (!btn) return;
+                btn.textContent = this.getRevealMineLabel();
+            }
+
+            updateCostLabels() {
+                this.setMineDetectorIdleLabel();
+                this.setBuyFlagLabel();
+                this.setRevealMineLabel();
+            }
+
+            updateHintButton() {
+                const hintBtn = document.getElementById('hintBtn');
+                if (!hintBtn) return;
+                const disable = this.powersDisabledMode || this.gameOver || this.gameWon || this.maxHints === 0 || this.hintsUsed >= this.maxHints;
+                hintBtn.disabled = disable;
+                if (this.maxHints === 0) {
+                    hintBtn.textContent = 'Hint (Disabled)';
+                } else {
+                    const remaining = Math.max(0, this.maxHints - this.hintsUsed);
+                    hintBtn.textContent = `Hint (${remaining}/${this.maxHints})`;
+                }
             }
 
             updateBombUi() {
@@ -1213,14 +1313,13 @@
 
             refreshPowerButtons() {
                 const disable = this.powersDisabledMode;
-                const hintBtn = document.getElementById('hintBtn');
                 const revealMineBtn = document.getElementById('revealMineBtn');
                 const mineDetectorBtn = document.getElementById('mineDetectorBtn');
                 const buyFlagBtn = document.getElementById('buyFlagBtn');
-                if (hintBtn) hintBtn.disabled = disable || this.hintsUsed >= 5 || this.gameOver || this.gameWon;
                 if (revealMineBtn) revealMineBtn.disabled = disable || this.gameOver || this.gameWon;
                 if (mineDetectorBtn) mineDetectorBtn.disabled = disable || this.gameOver || this.gameWon;
                 if (buyFlagBtn) buyFlagBtn.disabled = disable || this.gameOver || this.gameWon;
+                this.updateHintButton();
             }
 
             resolveMineDensity() {
@@ -1278,6 +1377,10 @@
                 const mathA = document.getElementById('mathA');
                 const mathB = document.getElementById('mathB');
                 const mathC = document.getElementById('mathC');
+                const coinWrap = document.getElementById('coinWrap');
+                const coinStatus = document.getElementById('coinStatus');
+                const headsBtn = document.getElementById('headsBtn');
+                const tailsBtn = document.getElementById('tailsBtn');
                 
                 this.miniGame = { hits: 0, goal: 10, timeLeft: 15, interval: null, mover: null };
                 info.textContent = `Choose a minigame to begin.`;
@@ -1306,6 +1409,12 @@
                     const bar = document.getElementById('holdBar');
                     if (barWrap) barWrap.style.display = 'none';
                     if (bar) bar.style.width = '0%';
+                    if (coinWrap) coinWrap.style.display = 'none';
+                    if (coinStatus) coinStatus.textContent = 'Pick Heads or Tails';
+                    if (headsBtn) headsBtn.onclick = null;
+                    if (headsBtn) headsBtn.ontouchstart = null;
+                    if (tailsBtn) tailsBtn.onclick = null;
+                    if (tailsBtn) tailsBtn.ontouchstart = null;
                 };
                 
                 const syncUIForSelection = () => {
@@ -1366,7 +1475,8 @@
                         reaction.style.display = 'none';
                         simonGrid.style.display = 'none';
                         mathWrap.style.display = 'none';
-                        document.getElementById('coinWrap').style.display = 'none';
+                        if (coinWrap) coinWrap.style.display = 'none';
+                        if (coinStatus) coinStatus.textContent = 'Pick Heads or Tails';
                     }
                 };
                 select.onchange = syncUIForSelection;
@@ -1677,15 +1787,12 @@
                             }
                         }, 1000);
                     } else if (mode === 'coin') {
-                        const coinWrap = document.getElementById('coinWrap');
-                        const coinStatus = document.getElementById('coinStatus');
-                        const headsBtn = document.getElementById('headsBtn');
-                        const tailsBtn = document.getElementById('tailsBtn');
+                        if (!coinWrap || !coinStatus || !headsBtn || !tailsBtn) return;
                         coinWrap.style.display = 'flex';
                         let round = 0;
                         let correct = 0;
                         const play = (guess) => {
-                            if (!this.miniGameRunning) return;
+                            if (!this.miniGameRunning || select.value !== 'coin') return;
                             const flip = Math.random() < 0.5 ? 'Heads' : 'Tails';
                             const win = (guess === flip);
                             if (win) { correct++; this.addScore(150); }
@@ -1696,8 +1803,12 @@
                                 this.finishMiniGame(true, { winPoints: bonus });
                             }
                         };
-                        headsBtn.onclick = () => play('Heads');
-                        tailsBtn.onclick = () => play('Tails');
+                        const handleHeads = (e) => { if (e) e.preventDefault(); play('Heads'); };
+                        const handleTails = (e) => { if (e) e.preventDefault(); play('Tails'); };
+                        headsBtn.onclick = handleHeads;
+                        tailsBtn.onclick = handleTails;
+                        headsBtn.ontouchstart = handleHeads;
+                        tailsBtn.ontouchstart = handleTails;
                     }
                 };
                 closeBtn.onclick = () => this.closeMiniGame();
