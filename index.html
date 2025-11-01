@@ -74,6 +74,12 @@
             cursor: not-allowed;
         }
 
+        .btn.active-mode {
+            background-color: #4CAF50;
+            color: #fff;
+            border: 2px inset #2e7d32;
+        }
+
         .game-board {
             display: grid;
             gap: 1px;
@@ -253,6 +259,8 @@
                 <button class="btn" id="miniGameBtn">Mini Game</button>
                 <button class="btn" id="powersToggleBtn">Powers: On</button>
                 <button class="btn" id="sizeEditorBtn">Size Editor</button>
+                <button class="btn" id="interactionRevealBtn">Reveal Mode</button>
+                <button class="btn" id="interactionFlagBtn">Flag Mode</button>
             </div>
             <div class="timer" id="timer">000</div>
         </div>
@@ -418,6 +426,7 @@
                 this.maxBombs = this.calculateMaxBombs();
                 this.maxHints = this.calculateMaxHints();
                 this.updateCostsForDimensions(this.rows, this.cols);
+                this.interactionMode = 'auto';
 
                 this.initializeBoard();
                 this.setupEventListeners();
@@ -489,6 +498,10 @@
                 document.getElementById('miniGameBtn').addEventListener('click', () => this.openMiniGame());
                 document.getElementById('powersToggleBtn').addEventListener('click', () => this.togglePowers());
                 document.getElementById('sizeEditorBtn').addEventListener('click', () => this.openSizeEditor());
+                const revealModeBtn = document.getElementById('interactionRevealBtn');
+                const flagModeBtn = document.getElementById('interactionFlagBtn');
+                if (revealModeBtn) revealModeBtn.addEventListener('click', () => this.toggleInteractionMode('reveal'));
+                if (flagModeBtn) flagModeBtn.addEventListener('click', () => this.toggleInteractionMode('flag'));
                 document.getElementById('sizeApplyBtn').addEventListener('click', () => this.applySizeEditor());
                 document.getElementById('sizeCancelBtn').addEventListener('click', () => this.closeSizeEditor());
                 const sizeInputs = ['rowsSlider','colsSlider','rowsInput','colsInput','densityInput'];
@@ -543,9 +556,13 @@
                             if (this.gameOver || this.gameWon) return;
                             touchMoved = false;
                             touchStartTime = performance.now();
-                            this.holdTimer = setTimeout(() => {
-                                this.flagCell(row, col);
-                            }, this.holdThreshold);
+                            if (this.interactionMode === 'auto') {
+                                this.holdTimer = setTimeout(() => {
+                                    this.flagCell(row, col);
+                                }, this.holdThreshold);
+                            } else {
+                                this.holdTimer = null;
+                            }
                         }, { passive: true });
                         cell.addEventListener('touchmove', () => {
                             touchMoved = true;
@@ -555,18 +572,23 @@
                             if (this.holdTimer) { clearTimeout(this.holdTimer); this.holdTimer = null; }
                             const duration = performance.now() - touchStartTime;
                             if (touchMoved) return;
+                            if (this.interactionMode === 'flag') {
+                                this.flagCell(row, col);
+                                return;
+                            }
                             // If short tap, act like left-click
-                            if (duration < this.holdThreshold) {
+                            if (duration < this.holdThreshold || this.interactionMode !== 'auto') {
                                 if (this.bombTargeting) {
                                     this.dropBomb(row, col);
                                 } else if (this.mineDetectorActive) {
                                     this.useMineDetector(row, col);
-                                } else if (this.flagged[row][col]) {
-                                    return;
-                                } else if (this.revealed[row][col]) {
-                                    this.revealAdjacentCells(row, col);
                                 } else {
-                                    this.revealCell(row, col);
+                                    if (this.flagged[row][col]) return;
+                                    if (this.revealed[row][col]) {
+                                        this.revealAdjacentCells(row, col);
+                                    } else {
+                                        this.revealCell(row, col);
+                                    }
                                 }
                             }
                         });
@@ -587,7 +609,7 @@
             handleMouseDown(e, row, col) {
                 if (this.gameOver || this.gameWon) return;
                 
-                if (e.button === 0) { // Left click
+                if (e.button === 0 && this.interactionMode === 'auto') { // Left click
                     this.holdTimer = setTimeout(() => {
                         this.flagCell(row, col);
                     }, this.holdThreshold);
@@ -607,13 +629,15 @@
                         this.dropBomb(row, col);
                     } else if (this.mineDetectorActive) {
                         this.useMineDetector(row, col);
-                    } else if (this.flagged[row][col]) {
-                        // Don't do anything if clicking on a flagged tile
-                        return;
-                    } else if (this.revealed[row][col]) {
-                        this.revealAdjacentCells(row, col);
+                    } else if (this.interactionMode === 'flag') {
+                        this.flagCell(row, col);
                     } else {
-                        this.revealCell(row, col);
+                        if (this.flagged[row][col]) return;
+                        if (this.revealed[row][col]) {
+                            this.revealAdjacentCells(row, col);
+                        } else {
+                            this.revealCell(row, col);
+                        }
                     }
                 }
             }
@@ -642,6 +666,7 @@
                 
                 if (this.board[row][col] === -1) {
                     this.gameOver = true;
+                    this.interactionMode = 'auto';
                     this.lostMineRow = row;
                     this.lostMineCol = col;
                     this.revealAllMines();
@@ -988,6 +1013,7 @@
                 // Win if all mines are flagged AND no tiles are left uncovered
                 if (flaggedMines === this.mines && coveredTiles === 0) {
                     this.gameWon = true;
+                    this.interactionMode = 'auto';
                     this.stopTimer();
                     // Award 500 points per mine when winning
                     this.addScore(500 * this.mines);
@@ -1075,6 +1101,7 @@
                     detectorBtn.disabled = this.powersDisabledMode;
                 }
                 this.setMineDetectorIdleLabel();
+                this.interactionMode = 'auto';
                 this.refreshPowerButtons();
                 this.score = 0;
                 this.render();
@@ -1323,6 +1350,35 @@
                 }
             }
 
+            toggleInteractionMode(mode) {
+                if (this.gameOver || this.gameWon) return;
+                const nextMode = this.interactionMode === mode ? 'auto' : mode;
+                this.interactionMode = nextMode;
+                if (this.holdTimer) {
+                    clearTimeout(this.holdTimer);
+                    this.holdTimer = null;
+                }
+                this.updateInteractionModeUi();
+            }
+
+            updateInteractionModeUi() {
+                const revealModeBtn = document.getElementById('interactionRevealBtn');
+                const flagModeBtn = document.getElementById('interactionFlagBtn');
+                const disabled = this.gameOver || this.gameWon;
+                if (revealModeBtn) {
+                    const active = this.interactionMode === 'reveal';
+                    revealModeBtn.classList.toggle('active-mode', active);
+                    revealModeBtn.textContent = active ? 'Reveal Mode (Active)' : 'Reveal Mode';
+                    revealModeBtn.disabled = disabled;
+                }
+                if (flagModeBtn) {
+                    const active = this.interactionMode === 'flag';
+                    flagModeBtn.classList.toggle('active-mode', active);
+                    flagModeBtn.textContent = active ? 'Flag Mode (Active)' : 'Flag Mode';
+                    flagModeBtn.disabled = disabled;
+                }
+            }
+
             updateBombUi() {
                 const bombBtn = document.getElementById('bombBtn');
                 if (!bombBtn) return;
@@ -1354,6 +1410,7 @@
                 if (mineDetectorBtn) mineDetectorBtn.disabled = disable || this.gameOver || this.gameWon;
                 if (buyFlagBtn) buyFlagBtn.disabled = disable || this.gameOver || this.gameWon;
                 this.updateHintButton();
+                this.updateInteractionModeUi();
             }
 
             resolveMineDensity() {
