@@ -47,6 +47,11 @@
             text-align: center;
         }
 
+        .mine-counter.showing-mines {
+            background-color: #4CAF50;
+            color: #fff;
+        }
+
         .controls {
             display: flex;
             gap: 10px;
@@ -259,6 +264,8 @@
                 <button class="btn" id="miniGameBtn">Mini Game</button>
                 <button class="btn" id="powersToggleBtn">Powers: On</button>
                 <button class="btn" id="sizeEditorBtn">Size Editor</button>
+                <button class="btn" id="checkpointBtn">Checkpoint (1000)</button>
+                <button class="btn" id="showMinesBtn">Show Mines Left (100)</button>
                 <button class="btn" id="interactionRevealBtn">Reveal Mode</button>
                 <button class="btn" id="interactionFlagBtn">Flag Mode</button>
             </div>
@@ -389,12 +396,18 @@
                 this.baseCosts = {
                     mineDetector: 300,
                     buyFlag: 100,
-                    revealMine: 500
+                    revealMine: 500,
+                    showMines: 100
                 };
                 this.priceMultiplier = 1;
                 this.mineDetectorCost = this.baseCosts.mineDetector;
                 this.buyFlagCost = this.baseCosts.buyFlag;
                 this.revealMineCost = this.baseCosts.revealMine;
+                this.showMinesCost = this.baseCosts.showMines;
+                this.checkpointCost = 1000;
+                this.checkpointState = null;
+                this.showMinesActive = false;
+                this.showMinesTimeout = null;
                 this.difficultyProfiles = {
                     easy: { label: 'Easy', density: 200 / this.baseArea },
                     medium: { label: 'Medium', density: 325 / this.baseArea },
@@ -434,6 +447,7 @@
                 this.syncSizeEditorDefaults();
                 this.updateCostLabels();
                 this.updateHintButton();
+                this.updateCheckpointButton();
 
                 // Mobile copy/select/callout prevention
                 if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
@@ -498,6 +512,8 @@
                 document.getElementById('miniGameBtn').addEventListener('click', () => this.openMiniGame());
                 document.getElementById('powersToggleBtn').addEventListener('click', () => this.togglePowers());
                 document.getElementById('sizeEditorBtn').addEventListener('click', () => this.openSizeEditor());
+                document.getElementById('checkpointBtn').addEventListener('click', () => this.checkpointFunction());
+                document.getElementById('showMinesBtn').addEventListener('click', () => this.showMinesLeftFunction());
                 const revealModeBtn = document.getElementById('interactionRevealBtn');
                 const flagModeBtn = document.getElementById('interactionFlagBtn');
                 if (revealModeBtn) revealModeBtn.addEventListener('click', () => this.toggleInteractionMode('reveal'));
@@ -667,6 +683,7 @@
                 if (this.board[row][col] === -1) {
                     this.gameOver = true;
                     this.interactionMode = 'auto';
+                    this.clearShowMinesIndicator();
                     this.lostMineRow = row;
                     this.lostMineCol = col;
                     this.revealAllMines();
@@ -1014,6 +1031,7 @@
                 if (flaggedMines === this.mines && coveredTiles === 0) {
                     this.gameWon = true;
                     this.interactionMode = 'auto';
+                    this.clearShowMinesIndicator();
                     this.stopTimer();
                     // Award 500 points per mine when winning
                     this.addScore(500 * this.mines);
@@ -1023,7 +1041,15 @@
             updateMineCounter() {
                 const mineCounter = document.getElementById('mineCounter');
                 if (mineCounter) {
-                    mineCounter.textContent = this.availableFlags.toString().padStart(3, '0');
+                    if (this.showMinesActive) {
+                        const flaggedCount = this.flagged.flat().filter(flag => flag).length;
+                        const minesLeft = Math.max(0, this.mines - flaggedCount);
+                        mineCounter.textContent = minesLeft.toString().padStart(3, '0');
+                        mineCounter.classList.add('showing-mines');
+                    } else {
+                        mineCounter.textContent = this.availableFlags.toString().padStart(3, '0');
+                        mineCounter.classList.remove('showing-mines');
+                    }
                 }
                 this.setBuyFlagLabel();
             }
@@ -1044,10 +1070,15 @@
 
             updateTotalScore() {
                 document.getElementById('totalScore').textContent = this.totalScore.toString().padStart(5, '0');
+                this.updateCheckpointButton();
+                this.updateShowMinesButton();
             }
 
             updateGameStatus() {
                 const statusElement = document.getElementById('gameStatus');
+                if (statusElement && statusElement.dataset.showMines === '1') {
+                    return;
+                }
                 if (this.gameWon) {
                     statusElement.textContent = '🎉 You Win! 🎉';
                     statusElement.className = 'game-status win';
@@ -1079,6 +1110,7 @@
 
             newGame() {
                 this.stopTimer();
+                this.clearShowMinesIndicator();
                 this.mineDensity = this.resolveMineDensity();
                 this.mines = Math.max(1, Math.round(this.mineDensity * this.rows * this.cols));
                 this.availableFlags = this.mines;
@@ -1095,6 +1127,8 @@
                 this.maxBombs = this.calculateMaxBombs();
                 this.maxHints = this.calculateMaxHints();
                 this.updateCostsForDimensions(this.rows, this.cols);
+                this.checkpointState = null;
+                this.updateCheckpointButton();
                 this.initializeBoard();
                 const detectorBtn = document.getElementById('mineDetectorBtn');
                 if (detectorBtn) {
@@ -1254,6 +1288,193 @@
                 });
             }
 
+
+            cloneMatrix(matrix) {
+                return matrix.map(row => row.slice());
+            }
+
+            captureCheckpointState() {
+                const timerEl = document.getElementById('timer');
+                return {
+                    rows: this.rows,
+                    cols: this.cols,
+                    mines: this.mines,
+                    mineDensity: this.mineDensity,
+                    mineDensityRange: this.mineDensityRange ? [...this.mineDensityRange] : null,
+                    difficultyKey: this.difficultyKey,
+                    board: this.cloneMatrix(this.board),
+                    revealed: this.cloneMatrix(this.revealed),
+                    flagged: this.cloneMatrix(this.flagged),
+                    availableFlags: this.availableFlags,
+                    score: this.score,
+                    totalScore: this.totalScore,
+                    bombsUsed: this.bombsUsed,
+                    maxBombs: this.maxBombs,
+                    hintsUsed: this.hintsUsed,
+                    powersDisabledMode: this.powersDisabledMode,
+                    interactionMode: this.interactionMode,
+                    elapsedTime: this.startTime ? Date.now() - this.startTime : null,
+                    timerDisplay: timerEl ? timerEl.textContent : '000'
+                };
+            }
+
+            restoreCheckpointState() {
+                if (!this.checkpointState) return;
+                this.clearShowMinesIndicator(false);
+                const state = this.checkpointState;
+                this.stopTimer();
+                this.rows = state.rows;
+                this.cols = state.cols;
+                this.mines = state.mines;
+                this.mineDensity = state.mineDensity;
+                this.mineDensityRange = state.mineDensityRange ? [...state.mineDensityRange] : null;
+                this.difficultyKey = state.difficultyKey || this.difficultyKey;
+                const difficultySelect = document.getElementById('difficultySelect');
+                if (difficultySelect && state.difficultyKey) {
+                    difficultySelect.value = state.difficultyKey;
+                }
+                this.board = this.cloneMatrix(state.board);
+                this.revealed = this.cloneMatrix(state.revealed);
+                this.flagged = this.cloneMatrix(state.flagged);
+                this.availableFlags = state.availableFlags;
+                this.score = state.score;
+                this.totalScore = state.totalScore;
+                this.bombsUsed = state.bombsUsed;
+                this.maxBombs = state.maxBombs;
+                this.hintsUsed = state.hintsUsed;
+                this.powersDisabledMode = state.powersDisabledMode;
+                this.interactionMode = state.interactionMode || 'auto';
+                this.gameOver = false;
+                this.gameWon = false;
+                this.mineRevealed = false;
+                this.bombTargeting = false;
+                this.mineDetectorActive = false;
+                this.lostMineRow = null;
+                this.lostMineCol = null;
+                this.startTime = state.elapsedTime != null ? Date.now() - state.elapsedTime : null;
+                localStorage.setItem('ms_totalScore', String(this.totalScore));
+                this.render();
+                this.syncSizeEditorDefaults();
+                const powersBtn = document.getElementById('powersToggleBtn');
+                if (powersBtn) powersBtn.textContent = this.powersDisabledMode ? 'Powers: Off' : 'Powers: On';
+                if (this.startTime) {
+                    this.startTimer();
+                } else {
+                    const timerEl = document.getElementById('timer');
+                    if (timerEl) timerEl.textContent = state.timerDisplay || '000';
+                }
+                const timerEl = document.getElementById('timer');
+                if (timerEl && state.timerDisplay) timerEl.textContent = state.timerDisplay;
+                this.refreshPowerButtons();
+                this.updateCheckpointButton();
+            }
+
+            checkpointFunction() {
+                this.clearShowMinesIndicator();
+                const cost = this.checkpointCost;
+                if (this.gameOver) {
+                    if (!this.checkpointState) return;
+                    this.restoreCheckpointState();
+                    return;
+                }
+                if (this.gameWon || this.powersDisabledMode) return;
+                if (this.totalScore < cost) return;
+                this.totalScore -= cost;
+                if (this.totalScore < 0) this.totalScore = 0;
+                localStorage.setItem('ms_totalScore', String(this.totalScore));
+                this.updateTotalScore();
+                this.checkpointState = this.captureCheckpointState();
+                this.updateCheckpointButton();
+            }
+
+            updateCheckpointButton() {
+                const btn = document.getElementById('checkpointBtn');
+                if (!btn) return;
+                const cost = this.checkpointCost;
+                const hasCheckpoint = !!this.checkpointState;
+                btn.classList.remove('active-mode');
+                if (this.gameOver && hasCheckpoint) {
+                    btn.textContent = 'Load Checkpoint';
+                    btn.disabled = false;
+                    return;
+                }
+                if (this.gameOver || this.gameWon) {
+                    btn.textContent = `Checkpoint (${cost})`;
+                    btn.disabled = true;
+                    return;
+                }
+                const label = hasCheckpoint ? `Checkpoint Ready (${cost})` : `Checkpoint (${cost})`;
+                btn.textContent = label;
+                const disable = this.powersDisabledMode || this.totalScore < cost;
+                btn.disabled = disable;
+            }
+
+            updateShowMinesButton() {
+                const btn = document.getElementById('showMinesBtn');
+                if (!btn) return;
+                if (this.showMinesActive) {
+                    btn.textContent = 'Showing Mines...';
+                } else {
+                    btn.textContent = `Show Mines Left (${this.showMinesCost})`;
+                }
+                const disable = this.powersDisabledMode || this.gameOver || this.gameWon || this.totalScore < this.showMinesCost || this.showMinesActive;
+                btn.disabled = disable;
+            }
+
+            clearShowMinesIndicator(updateButton = true) {
+                if (this.showMinesTimeout) {
+                    clearTimeout(this.showMinesTimeout);
+                    this.showMinesTimeout = null;
+                }
+                const statusElement = document.getElementById('gameStatus');
+                if (statusElement && statusElement.dataset.showMines === '1') {
+                    delete statusElement.dataset.showMines;
+                    statusElement.textContent = '';
+                    statusElement.className = 'game-status';
+                }
+                const mineCounter = document.getElementById('mineCounter');
+                if (mineCounter) {
+                    mineCounter.classList.remove('showing-mines');
+                }
+                this.showMinesActive = false;
+                this.updateMineCounter();
+                if (updateButton) {
+                    this.updateShowMinesButton();
+                }
+                this.updateGameStatus();
+            }
+
+            showMinesLeftFunction() {
+                if (this.gameOver || this.gameWon) {
+                    this.updateShowMinesButton();
+                    return;
+                }
+                if (this.powersDisabledMode) return;
+                const cost = this.showMinesCost;
+                if (this.totalScore < cost) return;
+                if (this.showMinesActive) return;
+                this.totalScore -= cost;
+                if (this.totalScore < 0) this.totalScore = 0;
+                localStorage.setItem('ms_totalScore', String(this.totalScore));
+                this.updateTotalScore();
+                const statusElement = document.getElementById('gameStatus');
+                const mineCounter = document.getElementById('mineCounter');
+                const flaggedCount = this.flagged.flat().filter(flag => flag).length;
+                const minesLeft = Math.max(0, this.mines - flaggedCount);
+                if (statusElement) {
+                    statusElement.dataset.showMines = '1';
+                    statusElement.textContent = `Mines left: ${minesLeft}`;
+                    statusElement.className = 'game-status';
+                }
+                this.showMinesActive = true;
+                this.updateShowMinesButton();
+                this.updateMineCounter();
+                this.showMinesTimeout = setTimeout(() => {
+                    this.showMinesTimeout = null;
+                    this.clearShowMinesIndicator();
+                }, 5000);
+            }
+
             calculateMaxBombsForDimensions(rows, cols) {
                 const minDimension = Math.min(rows, cols);
                 if (minDimension < 15) return 0;
@@ -1297,6 +1518,7 @@
                 this.mineDetectorCost = this.adjustCost(this.baseCosts.mineDetector, multiplier);
                 this.buyFlagCost = this.adjustCost(this.baseCosts.buyFlag, multiplier);
                 this.revealMineCost = this.adjustCost(this.baseCosts.revealMine, multiplier);
+                this.showMinesCost = this.adjustCost(this.baseCosts.showMines, multiplier);
             }
 
             getMineDetectorLabel() {
@@ -1335,6 +1557,8 @@
                 this.setMineDetectorIdleLabel();
                 this.setBuyFlagLabel();
                 this.setRevealMineLabel();
+                this.updateCheckpointButton();
+                this.updateShowMinesButton();
             }
 
             updateHintButton() {
@@ -1411,6 +1635,8 @@
                 if (buyFlagBtn) buyFlagBtn.disabled = disable || this.gameOver || this.gameWon;
                 this.updateHintButton();
                 this.updateInteractionModeUi();
+                this.updateCheckpointButton();
+                this.updateShowMinesButton();
             }
 
             resolveMineDensity() {
