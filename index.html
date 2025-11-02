@@ -265,6 +265,7 @@
                 <button class="btn" id="powersToggleBtn">Powers: On</button>
                 <button class="btn" id="sizeEditorBtn">Size Editor</button>
                 <button class="btn" id="checkpointBtn">Checkpoint (1000)</button>
+                <button class="btn" id="bigBombBtn">Big A-Bomb (2000)</button>
                 <button class="btn" id="showMinesBtn">Show Mines Left (100)</button>
                 <button class="btn" id="interactionRevealBtn">Reveal Mode</button>
                 <button class="btn" id="interactionFlagBtn">Flag Mode</button>
@@ -397,17 +398,21 @@
                     mineDetector: 300,
                     buyFlag: 100,
                     revealMine: 500,
-                    showMines: 100
+                    showMines: 100,
+                    bigBomb: 2000
                 };
                 this.priceMultiplier = 1;
                 this.mineDetectorCost = this.baseCosts.mineDetector;
                 this.buyFlagCost = this.baseCosts.buyFlag;
                 this.revealMineCost = this.baseCosts.revealMine;
                 this.showMinesCost = this.baseCosts.showMines;
+                this.bigBombCost = this.baseCosts.bigBomb;
                 this.checkpointCost = 1000;
                 this.checkpointState = null;
                 this.showMinesActive = false;
                 this.showMinesTimeout = null;
+                this.bigBombUsed = false;
+                this.bigBombTargeting = false;
                 this.difficultyProfiles = {
                     easy: { label: 'Easy', density: 200 / this.baseArea },
                     medium: { label: 'Medium', density: 325 / this.baseArea },
@@ -448,6 +453,8 @@
                 this.updateCostLabels();
                 this.updateHintButton();
                 this.updateCheckpointButton();
+                this.updateShowMinesButton();
+                this.updateBigBombButton();
 
                 // Mobile copy/select/callout prevention
                 if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
@@ -513,6 +520,7 @@
                 document.getElementById('powersToggleBtn').addEventListener('click', () => this.togglePowers());
                 document.getElementById('sizeEditorBtn').addEventListener('click', () => this.openSizeEditor());
                 document.getElementById('checkpointBtn').addEventListener('click', () => this.checkpointFunction());
+                document.getElementById('bigBombBtn').addEventListener('click', () => this.bigBombFunction());
                 document.getElementById('showMinesBtn').addEventListener('click', () => this.showMinesLeftFunction());
                 const revealModeBtn = document.getElementById('interactionRevealBtn');
                 const flagModeBtn = document.getElementById('interactionFlagBtn');
@@ -594,6 +602,10 @@
                             }
                             // If short tap, act like left-click
                             if (duration < this.holdThreshold || this.interactionMode !== 'auto') {
+                                if (this.bigBombTargeting) {
+                                    this.dropBigBomb(row, col);
+                                    return;
+                                }
                                 if (this.bombTargeting) {
                                     this.dropBomb(row, col);
                                 } else if (this.mineDetectorActive) {
@@ -641,6 +653,10 @@
                 }
                 
                 if (e.button === 0) { // Left click
+                    if (this.bigBombTargeting) {
+                        this.dropBigBomb(row, col);
+                        return;
+                    }
                     if (this.bombTargeting) {
                         this.dropBomb(row, col);
                     } else if (this.mineDetectorActive) {
@@ -684,6 +700,8 @@
                     this.gameOver = true;
                     this.interactionMode = 'auto';
                     this.clearShowMinesIndicator();
+                    this.bigBombTargeting = false;
+                    this.updateBigBombButton();
                     this.lostMineRow = row;
                     this.lostMineCol = col;
                     this.revealAllMines();
@@ -1032,6 +1050,8 @@
                     this.gameWon = true;
                     this.interactionMode = 'auto';
                     this.clearShowMinesIndicator();
+                    this.bigBombTargeting = false;
+                    this.updateBigBombButton();
                     this.stopTimer();
                     // Award 500 points per mine when winning
                     this.addScore(500 * this.mines);
@@ -1072,6 +1092,7 @@
                 document.getElementById('totalScore').textContent = this.totalScore.toString().padStart(5, '0');
                 this.updateCheckpointButton();
                 this.updateShowMinesButton();
+                this.updateBigBombButton();
             }
 
             updateGameStatus() {
@@ -1120,6 +1141,7 @@
                 this.bombsUsed = 0;
                 this.mineRevealed = false;
                 this.bombTargeting = false;
+                this.bigBombTargeting = false;
                 this.mineDetectorActive = false;
                 this.hintsUsed = 0;
                 this.lostMineRow = null;
@@ -1128,6 +1150,7 @@
                 this.maxHints = this.calculateMaxHints();
                 this.updateCostsForDimensions(this.rows, this.cols);
                 this.checkpointState = null;
+                this.bigBombUsed = false;
                 this.updateCheckpointButton();
                 this.initializeBoard();
                 const detectorBtn = document.getElementById('mineDetectorBtn');
@@ -1137,6 +1160,7 @@
                 this.setMineDetectorIdleLabel();
                 this.interactionMode = 'auto';
                 this.refreshPowerButtons();
+                this.updateBigBombButton();
                 this.score = 0;
                 this.render();
                 this.syncSizeEditorDefaults();
@@ -1313,6 +1337,7 @@
                     hintsUsed: this.hintsUsed,
                     powersDisabledMode: this.powersDisabledMode,
                     interactionMode: this.interactionMode,
+                    bigBombUsed: this.bigBombUsed,
                     elapsedTime: this.startTime ? Date.now() - this.startTime : null,
                     timerDisplay: timerEl ? timerEl.textContent : '000'
                 };
@@ -1344,6 +1369,8 @@
                 this.hintsUsed = state.hintsUsed;
                 this.powersDisabledMode = state.powersDisabledMode;
                 this.interactionMode = state.interactionMode || 'auto';
+                this.bigBombUsed = !!state.bigBombUsed;
+                this.bigBombTargeting = false;
                 this.gameOver = false;
                 this.gameWon = false;
                 this.mineRevealed = false;
@@ -1367,10 +1394,14 @@
                 if (timerEl && state.timerDisplay) timerEl.textContent = state.timerDisplay;
                 this.refreshPowerButtons();
                 this.updateCheckpointButton();
+                this.updateBigBombButton();
+                this.updateShowMinesButton();
             }
 
             checkpointFunction() {
                 this.clearShowMinesIndicator();
+                this.bigBombTargeting = false;
+                this.updateBigBombButton();
                 const cost = this.checkpointCost;
                 if (this.gameOver) {
                     if (!this.checkpointState) return;
@@ -1421,6 +1452,32 @@
                 btn.disabled = disable;
             }
 
+            updateBigBombButton() {
+                const btn = document.getElementById('bigBombBtn');
+                if (!btn) return;
+                btn.classList.remove('active-mode');
+                if (this.bigBombUsed) {
+                    this.bigBombTargeting = false;
+                    btn.textContent = 'Big A-Bomb - Used';
+                    btn.disabled = true;
+                    return;
+                }
+                if (this.gameOver || this.gameWon || this.powersDisabledMode) {
+                    this.bigBombTargeting = false;
+                    btn.textContent = `Big A-Bomb (${this.bigBombCost})`;
+                    btn.disabled = true;
+                    return;
+                }
+                if (this.bigBombTargeting) {
+                    btn.textContent = 'Click to Deploy Big A-Bomb';
+                    btn.classList.add('active-mode');
+                    btn.disabled = false;
+                    return;
+                }
+                btn.textContent = `Big A-Bomb (${this.bigBombCost})`;
+                btn.disabled = this.totalScore < this.bigBombCost;
+            }
+
             clearShowMinesIndicator(updateButton = true) {
                 if (this.showMinesTimeout) {
                     clearTimeout(this.showMinesTimeout);
@@ -1469,12 +1526,115 @@
                 this.showMinesActive = true;
                 this.updateShowMinesButton();
                 this.updateMineCounter();
+                this.updateBigBombButton();
                 this.showMinesTimeout = setTimeout(() => {
                     this.showMinesTimeout = null;
                     this.clearShowMinesIndicator();
                 }, 5000);
             }
 
+
+            bigBombFunction() {
+                if (this.gameOver || this.gameWon) {
+                    this.bigBombTargeting = false;
+                    this.updateBigBombButton();
+                    this.updateBombUi();
+                    return;
+                }
+                if (this.powersDisabledMode) {
+                    this.bigBombTargeting = false;
+                    this.updateBigBombButton();
+                    this.updateBombUi();
+                    return;
+                }
+                if (this.bigBombUsed) {
+                    this.bigBombTargeting = false;
+                    this.updateBigBombButton();
+                    this.updateBombUi();
+                    return;
+                }
+                if (this.bigBombTargeting) {
+                    this.bigBombTargeting = false;
+                    this.updateBigBombButton();
+                    this.updateBombUi();
+                    return;
+                }
+                if (this.totalScore < this.bigBombCost) {
+                    this.updateBigBombButton();
+                    return;
+                }
+                this.bombTargeting = false;
+                this.bigBombTargeting = true;
+                this.updateBombUi();
+                this.updateBigBombButton();
+            }
+
+            dropBigBomb(centerRow, centerCol) {
+                if (this.gameOver || this.gameWon) return;
+                if (this.bigBombUsed || !this.bigBombTargeting) return;
+                this.bigBombTargeting = false;
+                this.clearShowMinesIndicator();
+                if (this.totalScore < this.bigBombCost) {
+                    this.updateBigBombButton();
+                    return;
+                }
+                this.totalScore = Math.max(0, this.totalScore - this.bigBombCost);
+                localStorage.setItem('ms_totalScore', String(this.totalScore));
+                this.updateTotalScore();
+
+                const areaLower = 4;
+                const areaUpper = 5;
+                const startRow = Math.max(0, centerRow - areaLower);
+                const endRow = Math.min(this.rows - 1, centerRow + areaUpper);
+                const startCol = Math.max(0, centerCol - areaLower);
+                const endCol = Math.min(this.cols - 1, centerCol + areaUpper);
+
+                const toReveal = [];
+                for (let r = startRow; r <= endRow; r++) {
+                    for (let c = startCol; c <= endCol; c++) {
+                        if (this.board[r][c] === -1) {
+                            this.flagged[r][c] = true;
+                        } else {
+                            if (this.flagged[r][c]) {
+                                this.flagged[r][c] = false;
+                            }
+                            if (!this.revealed[r][c]) {
+                                toReveal.push([r, c]);
+                            }
+                        }
+                    }
+                }
+
+                const borderStartRow = Math.max(0, startRow - 1);
+                const borderEndRow = Math.min(this.rows - 1, endRow + 1);
+                const borderStartCol = Math.max(0, startCol - 1);
+                const borderEndCol = Math.min(this.cols - 1, endCol + 1);
+                for (let r = borderStartRow; r <= borderEndRow; r++) {
+                    for (let c = borderStartCol; c <= borderEndCol; c++) {
+                        const inside = r >= startRow && r <= endRow && c >= startCol && c <= endCol;
+                        if (!inside && this.board[r][c] === -1) {
+                            this.flagged[r][c] = true;
+                        }
+                    }
+                }
+
+                toReveal.forEach(([r, c]) => {
+                    if (!this.revealed[r][c]) {
+                        this.revealed[r][c] = true;
+                        this.addScore(5);
+                    }
+                });
+
+                const flaggedCount = this.flagged.flat().filter(flag => flag).length;
+                this.availableFlags = Math.max(0, this.mines - flaggedCount);
+                this.bigBombUsed = true;
+                this.updateBombUi();
+                this.updateBigBombButton();
+                this.updateMineCounter();
+                this.checkWinCondition();
+                this.render();
+                this.updateBigBombButton();
+            }
             calculateMaxBombsForDimensions(rows, cols) {
                 const minDimension = Math.min(rows, cols);
                 if (minDimension < 15) return 0;
@@ -1519,6 +1679,7 @@
                 this.buyFlagCost = this.adjustCost(this.baseCosts.buyFlag, multiplier);
                 this.revealMineCost = this.adjustCost(this.baseCosts.revealMine, multiplier);
                 this.showMinesCost = this.adjustCost(this.baseCosts.showMines, multiplier);
+                this.bigBombCost = this.adjustCost(this.baseCosts.bigBomb, multiplier);
             }
 
             getMineDetectorLabel() {
@@ -1559,6 +1720,7 @@
                 this.setRevealMineLabel();
                 this.updateCheckpointButton();
                 this.updateShowMinesButton();
+                this.updateBigBombButton();
             }
 
             updateHintButton() {
@@ -1637,6 +1799,7 @@
                 this.updateInteractionModeUi();
                 this.updateCheckpointButton();
                 this.updateShowMinesButton();
+                this.updateBigBombButton();
             }
 
             resolveMineDensity() {
@@ -1662,7 +1825,11 @@
                 this.powersDisabledMode = !this.powersDisabledMode;
                 const btn = document.getElementById('powersToggleBtn');
                 btn.textContent = this.powersDisabledMode ? 'Powers: Off' : 'Powers: On';
+                if (this.powersDisabledMode) {
+                    this.bigBombTargeting = false;
+                }
                 this.refreshPowerButtons();
+                this.updateBigBombButton();
             }
 
             // ===== Simple Mini Game =====
