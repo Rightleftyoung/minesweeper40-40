@@ -236,6 +236,11 @@
             text-align: center;
             font-weight: bold;
         }
+        .checkpoint-options {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
@@ -265,6 +270,10 @@
                 <button class="btn" id="powersToggleBtn">Powers: On</button>
                 <button class="btn" id="sizeEditorBtn">Size Editor</button>
                 <button class="btn" id="checkpointBtn">Checkpoint (1000)</button>
+                <div class="checkpoint-options" id="checkpointOptions" style="display:none;">
+                    <button class="btn" id="loadCheckpointBtn">Load Checkpoint</button>
+                    <button class="btn" id="buyCheckpointBtn">Buy Checkpoint (1000)</button>
+                </div>
                 <button class="btn" id="bigBombBtn">Big A-Bomb (2000)</button>
                 <button class="btn" id="showMinesBtn">Show Mines Left (100)</button>
                 <button class="btn" id="interactionRevealBtn">Reveal Mode</button>
@@ -287,6 +296,7 @@
                     <option value="tap">Tap The Mine</option>
                     <option value="react">Reaction Timer</option>
                     <option value="simon">Simon Sequence</option>
+                    <option value="simonFree">Simon Freeplay</option>
                     <option value="frenzy">Target Frenzy</option>
                     <option value="numbers">Number Tap</option>
                     <option value="moles">Whack-a-Mine</option>
@@ -409,6 +419,7 @@
                 this.bigBombCost = this.baseCosts.bigBomb;
                 this.checkpointCost = 1000;
                 this.checkpointState = null;
+                this.checkpointOptionsVisible = false;
                 this.showMinesActive = false;
                 this.showMinesTimeout = null;
                 this.bigBombUsed = false;
@@ -519,7 +530,11 @@
                 document.getElementById('miniGameBtn').addEventListener('click', () => this.openMiniGame());
                 document.getElementById('powersToggleBtn').addEventListener('click', () => this.togglePowers());
                 document.getElementById('sizeEditorBtn').addEventListener('click', () => this.openSizeEditor());
-                document.getElementById('checkpointBtn').addEventListener('click', () => this.checkpointFunction());
+                document.getElementById('checkpointBtn').addEventListener('click', () => this.toggleCheckpointOptions());
+                const loadCheckpointBtn = document.getElementById('loadCheckpointBtn');
+                const buyCheckpointBtn = document.getElementById('buyCheckpointBtn');
+                if (loadCheckpointBtn) loadCheckpointBtn.addEventListener('click', () => this.loadCheckpointFunction());
+                if (buyCheckpointBtn) buyCheckpointBtn.addEventListener('click', () => this.buyCheckpointFunction());
                 document.getElementById('bigBombBtn').addEventListener('click', () => this.bigBombFunction());
                 document.getElementById('showMinesBtn').addEventListener('click', () => this.showMinesLeftFunction());
                 const revealModeBtn = document.getElementById('interactionRevealBtn');
@@ -1151,6 +1166,7 @@
                 this.updateCostsForDimensions(this.rows, this.cols);
                 this.checkpointState = null;
                 this.bigBombUsed = false;
+                this.toggleCheckpointOptions(false);
                 this.updateCheckpointButton();
                 this.initializeBoard();
                 const detectorBtn = document.getElementById('mineDetectorBtn');
@@ -1398,17 +1414,21 @@
                 this.updateShowMinesButton();
             }
 
-            checkpointFunction() {
+            toggleCheckpointOptions(forceValue = null) {
+                const next = forceValue === null ? !this.checkpointOptionsVisible : !!forceValue;
+                this.checkpointOptionsVisible = next;
+                const options = document.getElementById('checkpointOptions');
+                if (options) {
+                    options.style.display = next ? 'flex' : 'none';
+                }
+            }
+
+            buyCheckpointFunction() {
                 this.clearShowMinesIndicator();
                 this.bigBombTargeting = false;
                 this.updateBigBombButton();
                 const cost = this.checkpointCost;
-                if (this.gameOver) {
-                    if (!this.checkpointState) return;
-                    this.restoreCheckpointState();
-                    return;
-                }
-                if (this.gameWon || this.powersDisabledMode) return;
+                if (this.gameOver || this.gameWon || this.powersDisabledMode) return;
                 if (this.totalScore < cost) return;
                 this.totalScore -= cost;
                 if (this.totalScore < 0) this.totalScore = 0;
@@ -1418,26 +1438,32 @@
                 this.updateCheckpointButton();
             }
 
+            loadCheckpointFunction() {
+                if (!this.checkpointState || this.gameWon) return;
+                this.restoreCheckpointState();
+                this.toggleCheckpointOptions(false);
+            }
+
             updateCheckpointButton() {
                 const btn = document.getElementById('checkpointBtn');
-                if (!btn) return;
+                const loadBtn = document.getElementById('loadCheckpointBtn');
+                const buyBtn = document.getElementById('buyCheckpointBtn');
                 const cost = this.checkpointCost;
                 const hasCheckpoint = !!this.checkpointState;
-                btn.classList.remove('active-mode');
-                if (this.gameOver && hasCheckpoint) {
-                    btn.textContent = 'Load Checkpoint';
-                    btn.disabled = false;
-                    return;
+                if (btn) {
+                    btn.textContent = 'Checkpoint Options';
+                    btn.disabled = this.gameWon;
                 }
-                if (this.gameOver || this.gameWon) {
-                    btn.textContent = `Checkpoint (${cost})`;
-                    btn.disabled = true;
-                    return;
+                if (buyBtn) {
+                    buyBtn.textContent = `Buy Checkpoint (${cost})`;
+                    const disable = this.powersDisabledMode || this.gameOver || this.gameWon || this.totalScore < cost;
+                    buyBtn.disabled = disable;
                 }
-                const label = hasCheckpoint ? `Checkpoint Ready (${cost})` : `Checkpoint (${cost})`;
-                btn.textContent = label;
-                const disable = this.powersDisabledMode || this.totalScore < cost;
-                btn.disabled = disable;
+                if (loadBtn) {
+                    loadBtn.textContent = hasCheckpoint ? 'Load Checkpoint' : 'Load Checkpoint (None)';
+                    const disableLoad = !hasCheckpoint || this.gameWon;
+                    loadBtn.disabled = disableLoad;
+                }
             }
 
             updateShowMinesButton() {
@@ -1923,6 +1949,11 @@
                         simonGrid.style.display = 'grid';
                         info.textContent = 'Round: 1 / 6';
                         mathWrap.style.display = 'none';
+                    } else if (v === 'simonFree') {
+                        desc.textContent = 'Simon Freeplay: go as long as you can. Earn 1,000 + (rounds passed × 200) when you miss.';
+                        simonGrid.style.display = 'grid';
+                        info.textContent = 'Round: 1 (Freeplay)';
+                        mathWrap.style.display = 'none';
                     } else if (v === 'frenzy') {
                         desc.textContent = 'Score as many hits as you can in 20s. Each hit = 50 pts.';
                         target.style.display = 'block';
@@ -2033,11 +2064,12 @@
                 const playSequence = async (seq) => {
                     for (const i of seq) { await flash(i); }
                 };
-                const resetSimon = () => {
+                const resetSimon = (mode = 'simon') => {
+                    this._simonMode = mode;
                     this._simonSeq = [Math.floor(Math.random()*4)];
                     this._simonPos = 0;
                     this._simonRound = 1;
-                    info.textContent = 'Round: 1 / 6';
+                    info.textContent = mode === 'simonFree' ? 'Round: 1 (Freeplay)' : 'Round: 1 / 6';
                 };
                 const startSimon = async () => {
                     this.miniGameRunning = true;
@@ -2046,22 +2078,32 @@
                 const bindSimonHandlers = () => {
                     simonTiles.forEach(tile => {
                         const onTap = async () => {
-                            if (!this.miniGameRunning || select.value !== 'simon') return;
+                            if (!this.miniGameRunning || (this._simonMode !== 'simon' && this._simonMode !== 'simonFree')) return;
                             const idx = Number(tile.dataset.idx);
                             if (idx === this._simonSeq[this._simonPos]) {
                                 this._simonPos++;
                                 if (this._simonPos >= this._simonSeq.length) {
                                     // next round
                                     this._simonRound++;
-                                    info.textContent = `Round: ${this._simonRound} / 6`;
-                                    if (this._simonRound > 6) { this.finishMiniGame(true); return; }
+                                    if (this._simonMode === 'simon') {
+                                        info.textContent = `Round: ${this._simonRound} / 6`;
+                                        if (this._simonRound > 6) { this.finishMiniGame(true); return; }
+                                    } else {
+                                        info.textContent = `Round: ${this._simonRound} (Freeplay)`;
+                                    }
                                     this._simonSeq.push(Math.floor(Math.random()*4));
                                     this._simonPos = 0;
                                     await new Promise(r=>setTimeout(r, 400));
                                     await playSequence(this._simonSeq);
                                 }
                             } else {
-                                this.finishMiniGame(false);
+                                if (this._simonMode === 'simonFree') {
+                                    const roundsPassed = Math.max(0, this._simonRound - 1);
+                                    const bonus = 1000 + (roundsPassed * 200);
+                                    this.finishMiniGame(true, { winPoints: bonus });
+                                } else {
+                                    this.finishMiniGame(false);
+                                }
                             }
                         };
                         tile.onclick = onTap;
@@ -2094,7 +2136,11 @@
                         this._reactionResults = [];
                         this._nextReactionRound();
                     } else if (mode === 'simon') {
-                        resetSimon();
+                        resetSimon('simon');
+                        bindSimonHandlers();
+                        await startSimon();
+                    } else if (mode === 'simonFree') {
+                        resetSimon('simonFree');
                         bindSimonHandlers();
                         await startSimon();
                     } else if (mode === 'frenzy') {
